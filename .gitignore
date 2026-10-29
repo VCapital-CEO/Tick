@@ -7,3 +7,4 @@ dev-server.py
 __pycache__/
 public/bots/
 public/u/
+.firebase/

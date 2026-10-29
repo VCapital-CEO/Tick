@@ -445,7 +445,8 @@ const KYC={none:"Not verified",pending:"In review",failed:"Not verified: last at
 async function kycBox(){
  const box=$("kycBox");if(!box||!me)return;
  const{data}=await sb.from("profiles").select("kyc_status").eq("id",me.id).single(),st=data?.kyc_status||"none";
- box.innerHTML=`<div class="note" style="margin-top:14px"><b>Identity</b>: ${KYC[st]}. ${st==="verified"?"Your ID is verified. Tick keeps only the result, never your documents.":"Verification uses a government ID and a selfie, handled by Stripe. It is required before live trading."}</div>${st==="verified"||st==="pending"?"":`<button class="btn ghost" id="kycGo" style="margin-top:8px">Verify identity</button>`}`;
+ const live=(await sb.from("app_config").select("value").eq("key","live_execution_enabled").maybeSingle()).data?.value==="true";
+ box.innerHTML=`<div class="note" style="margin-top:14px"><b>Identity</b>: ${KYC[st]}. ${st==="verified"?"Your ID is verified. Tick keeps only the result, never your documents.":"Verification uses a government ID and a selfie, handled by Stripe. It opens when live trading launches and is required before it."}</div>${st==="verified"||st==="pending"||!live?"":`<button class="btn ghost" id="kycGo" style="margin-top:8px">Verify identity</button>`}`;
  const go=$("kycGo");if(go)go.onclick=async()=>{go.disabled=true;const r=await fn("kyc-start",{});if(r.url)location.href=r.url;else{go.disabled=false}}}
 async function mfaBox(){
  const box=$("mfaBox"),f=(await sb.auth.mfa.listFactors()).data?.totp?.find(x=>x.status==="verified");

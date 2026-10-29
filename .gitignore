@@ -1,0 +1,9 @@
+node_modules/
+.env
+*.env
+*.whl
+dev-server.py
+.vscode/
+__pycache__/
+public/bots/
+public/u/

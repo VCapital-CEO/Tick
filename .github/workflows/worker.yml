@@ -1,0 +1,48 @@
+# Runs the Tick worker on a schedule: code checks, paper runs and stats.
+# Needs a PUBLIC repository (free unlimited minutes) and two repository secrets:
+# SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. See LAUNCH.md.
+name: worker
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: tick-worker
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the sandbox image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: worker/sandbox
+          load: true
+          tags: relay-sandbox
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: cd worker && npm ci
+      - name: Check market data is reachable from this runner
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "https://data-api.binance.vision/api/v3/ping")
+          echo "Binance market data status: $code"
+          [ "$code" = "200" ] || { echo "::error::Binance market data is not reachable from GitHub (status $code)"; exit 1; }
+      - name: Run the worker
+        working-directory: worker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BINANCE_BASE: https://data-api.binance.vision
+          WORKER_ID: github-actions
+          RUN_ONCE: "1"
+          RUN_SECONDS: "240"
+          TICK_MS: "600000"
+        run: node index.js

@@ -1,0 +1,17 @@
+name: backup
+on:
+  schedule: [{cron: "17 3 * * *"}]
+  workflow_dispatch: {}
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: pg_dump "$SUPABASE_DB_URL" --no-owner | gzip > relay-backup.sql.gz
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relay-backup
+          path: relay-backup.sql.gz
+          retention-days: 7

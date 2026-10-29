@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tick: rent trading bots that publish their record</title>
+<meta property="og:title" content="Tick: rent trading bots that publish their record"><meta property="og:description" content="Marketplace for trading bots with verified live records, creator scores and renter reviews.">
+<meta name="description" content="Tick is a marketplace for trading bots with verified live records, creator scores and renter reviews.">
+<meta name="theme-color" content="#05070a">
+<link rel="preload" href="/fonts/sora-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<a class="skip" href="#view">Skip to content</a>
+<header class="top"><div class="wrap top-in">
+ <a class="brand" href="/" aria-label="Tick home"><svg viewBox="0 0 34 30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 2v5M5 21v4M17 7v4M17 25v4M29 1v4M29 21v4"/><rect x="2" y="7" width="6" height="14" rx="1.5" fill="currentColor"/><rect x="14" y="11" width="6" height="14" rx="1.5"/><rect x="26" y="5" width="6" height="16" rx="1.5" fill="currentColor"/></svg>Tick</a>
+ <nav id="nav" aria-label="Main"><button data-h="#/market">Marketplace</button><button data-h="#/feed">Community</button><button data-h="#/creator">My bots</button><button data-h="#/rentals">My rentals</button><button data-h="#/me">Profile</button><button data-h="#/admin" id="navAdmin" style="display:none">Moderation</button></nav>
+ <div class="top-end"><div id="acct"><button class="icon" id="bellBtn" aria-label="Alerts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19a2 2 0 0 0 4 0"/></svg><span class="dot" id="bellN"></span></button><button class="icon" id="setBtn" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div><button class="btn" id="authBtn">Sign in</button></div>
+</div></header>
+<main class="wrap"><div id="view"></div>
+<footer class="foot"><p>Past results do not predict future returns. Tick never holds your funds: a trading key you share can place orders but never withdraw.</p><a href="/legal/terms">Terms</a><a href="/legal/privacy">Privacy</a><a href="/legal/risk">Risk disclosure</a><button class="lnk" id="supBtn" style="font-weight:500;color:var(--ink2)">Contact support</button></footer></main>
+<dialog id="detail" aria-label="Bot details"><div id="detailBody"></div></dialog>
+<dialog id="auth"><div class="dlg"><h2>Sign in or create an account</h2>
+<button class="btn ghost" id="aGoogle" type="button" style="display:flex;align-items:center;justify-content:center;gap:10px"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C.9 16.4 0 20.1 0 24s.9 7.6 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>Continue with Google</button>
+<div class="note" style="text-align:center">or use your email</div>
+<label>Email<input id="aEmail" type="email" autocomplete="email"></label>
+<label>Password<input id="aPass" type="password" autocomplete="current-password" minlength="8"></label>
+<div id="captcha"></div>
+<label class="mk" style="color:var(--ink);font-size:13px"><input type="checkbox" id="aAgree"> I agree to the Terms, Privacy Policy and Risk Disclosure (needed to create an account)</label>
+<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" id="aCancel">Cancel</button><button class="btn ghost" id="aUp">Create account</button><button class="btn" id="aIn">Sign in</button></div>
+<button class="lnk" id="aForgot" style="align-self:flex-start">Forgot your password?</button></div></dialog>
+<dialog id="upload"><div class="dlg"><h2>List a bot</h2>
+<label>Bot name<input id="uName" maxlength="40"></label>
+<label>What it does<textarea id="uDesc" rows="3" maxlength="600"></textarea></label>
+<label>Strategy<select id="uType"></select></label>
+<div><div class="note" style="margin-bottom:6px">Markets</div><input id="uMSearch" list="uMData" autocomplete="off" placeholder="Type a market, e.g. BTC or DOGE, then pick it"><datalist id="uMData"></datalist><div class="chips" id="uMSel" style="margin-top:8px"></div><div class="note" style="margin-top:6px">Up to 10 spot USDT markets with enough trading volume. Press Enter to add the typed market.</div></div>
+<div class="two"><label>Price (USD)<input id="uPrice" type="number" min="0" step="0.01" value="49"></label><label>Billing<select id="uBill"><option value="month">per month</option><option value="week">per week</option></select></label></div>
+<label>Bot code (.py)<input id="uFile" type="file" accept=".py"></label>
+<p class="note">Bots must define <code>decide(candles, markets)</code> and may use math, statistics, numpy, pandas and a few other safe libraries. Every bot must pass these checks before it is listed. New listings start as Not verified.</p>
+<div id="uReq" hidden></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="uCancel">Cancel</button><button class="btn" id="uSubmit">Publish listing</button></div></div></dialog>
+<dialog id="notif"><div class="dlg"><h2>Alerts</h2><div id="notifBody"></div><div style="text-align:right"><button class="btn ghost" id="notifClose">Close</button></div></div></dialog>
+<dialog id="settings"><div class="dlg"><h2>Settings</h2><label>New password<input id="setNew" type="password" minlength="8" autocomplete="new-password"></label><button class="btn" id="setPass">Change password</button>
+<div id="mfaBox"></div>
+<div id="kycBox"></div>
+<label class="mk" style="color:var(--ink)"><input type="checkbox" id="setEmail" style="width:auto"> Email me about live trading, verification and reviews</label>
+<label>Delete account: type DELETE<input id="setConfirm"></label><p class="note">Stop live trading first. This permanently removes your profile, bots, rentals, reviews and posts.</p><button class="btn danger" id="setDel">Delete my account</button>
+<div style="text-align:right"><button class="btn ghost" id="setClose">Close</button></div></div></dialog>
+<dialog id="reset"><div class="dlg"><h2>Set a new password</h2><label>New password<input id="rNew" type="password" minlength="8" autocomplete="new-password"></label><div style="text-align:right"><button class="btn" id="rGoPass">Save</button></div></div></dialog>
+<dialog id="support"><div class="dlg"><h2>Contact support</h2><label>Subject<input id="supSub" maxlength="120"></label><label>Message<textarea id="supMsg" rows="4" maxlength="2000"></textarea></label><p class="note">You need to be signed in. For takedown requests, include the bot's link and why.</p><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="supCancel">Cancel</button><button class="btn" id="supSend">Send</button></div></div></dialog>
+<dialog id="codeEdit"><div class="dlg"><h2 id="ceName">Edit code</h2><p class="note">Saving creates a new version. It goes through the code checks again, and a verified bot is re-verified.</p><textarea id="ceText" spellcheck="false" style="font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:50vh;white-space:pre;overflow:auto"></textarea><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn ghost" id="ceCancel">Cancel</button><button class="btn" id="ceSave">Save as new version</button></div></div></dialog>
+<dialog id="codeView"><div class="dlg"><h2 id="cvName">Bot code</h2><pre id="cvCode" style="max-height:60vh;overflow:auto;background:var(--tint);padding:12px;border-radius:10px;font-size:12px"></pre><div style="text-align:right"><button class="btn ghost" id="cvClose">Close</button></div></div></dialog>
+<dialog id="welcome"><div class="dlg"><h2>Welcome to Tick</h2>
+<p><b>Compare with evidence.</b> Every bot shows its markets, price, curve and drawdown. A Verified seal means Tick traded it on live prices for 30 days and kept the record.</p>
+<p><b>Rent at your own pace.</b> Try a bot in paper mode for free. Live trading uses your own exchange key (trading on, withdrawals off) and only the amount you allocate.</p>
+<p><b>Build and earn.</b> List a bot, test it on history, verify it, and set your own price.</p>
+<p class="note">Trading is risky and past results do not predict future returns. The risk disclosure is linked in the footer.</p>
+<div style="text-align:right"><button class="btn" id="welcomeOk">Got it</button></div></div></dialog>
+<script src="/vendor/supabase.js"></script>
+<script src="/config.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

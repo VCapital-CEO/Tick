@@ -1,0 +1,1 @@
+{"name": "relay-ui-test", "private": true, "type": "module", "scripts": {"test": "node --test --test-timeout=30000"}, "devDependencies": {"jsdom": "24.1.1"}}

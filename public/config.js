@@ -1,0 +1,3 @@
+// Supabase project URL and anon (public) key. Never put the service_role key here.
+// turnstileKey: optional Cloudflare Turnstile site key (also enable Captcha protection in Supabase Auth settings).
+window.CFG={url:"https://ygtdbboazcdsyfmzopfw.supabase.co",key:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlndGRiYm9hemNkc3lmbXpvcGZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwMjU5ODksImV4cCI6MjEwNzYwMTk4OX0.qzztKtMNeyEuzBg7Q6YBU6JDQqCLiV_mQxfO5kPgrcI",turnstileKey:"",sentryDsn:""};

@@ -41,6 +41,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           BINANCE_BASE: https://data-api.binance.vision
+          KEY_ENCRYPTION_SECRET: ${{ secrets.KEY_ENCRYPTION_SECRET }}
           WORKER_ID: github-actions
           RUN_ONCE: "1"
           RUN_SECONDS: "240"

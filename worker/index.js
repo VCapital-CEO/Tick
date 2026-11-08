@@ -3,7 +3,7 @@ import {spawn} from "node:child_process";
 import {mkdtempSync,writeFileSync,rmSync,chmodSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {liveTick} from "./live.js";
+import {liveTick,paperTick} from "./live.js";
 import {BINANCE} from "./config.js";
 import {step,metrics,CAPITAL} from "./engine.js";
 import {processBacktests} from "./backtest.js";
@@ -132,6 +132,7 @@ async function tick(){
  const{data:runs}=await db.from("verification_runs").select("*,bots(id,name,creator_id,markets),bot_versions(storage_path,check_state)").in("state",["pending","running"]);
  for(const r of runs??[]){try{await processRun(r,rules)}catch(e){await logErr("run "+r.id,e.message)}}
  try{await liveTick(db,{SYM,candles,sandbox,log:logErr,halt:c.live_execution_enabled!=="true"})}catch(e){await logErr("liveTick",e.message)}
+ try{await paperTick(db,{SYM,VOL,candles,sandbox,log:logErr})}catch(e){await logErr("paperTick",e.message)}
   for(const f of[ensureTrack,()=>processBacktests(db,{sandbox,SYM,VOL}),()=>sendEmails(db),prune]){try{await f()}catch(e){await logErr("task",e.message)}}
  await db.rpc("refresh_scores");
  console.log(new Date().toISOString(),"tick",runs?.length??0,"runs")}

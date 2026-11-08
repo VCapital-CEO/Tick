@@ -1,32 +1,27 @@
-import {json,admin,hmac} from "../_shared/util.ts";
-// Deploy with --no-verify-jwt. Stripe authenticates with its signature.
-// In Stripe, also listen to events on connected accounts so account.updated arrives.
-type DB=ReturnType<typeof admin>;
-async function verificationPaid(db:DB,s:any){
- const{data:pay}=await db.from("payments").select("*").eq("provider_ref",s.id).maybeSingle();
- if(!pay||pay.state==="paid"||s.payment_status!=="paid")return;
- await db.from("payments").update({state:"paid"}).eq("id",pay.id);
- const m=s.metadata;
- await db.rpc("start_verification_run",{p_bot:m.bot_id,p_version:m.version_id,p_fee:pay.amount_cents,p_payment:pay.id})}
-async function subscribed(db:DB,s:any){
- const m=s.metadata;if(!m?.bot_id||!m?.renter_id)return;
- if(s.customer)await db.from("profiles").update({stripe_customer_id:s.customer}).eq("id",m.renter_id);
- const{data:b}=await db.from("bots").select("price_cents,billing_period").eq("id",m.bot_id).single();
- const{data:ex}=await db.from("rentals").select("id").eq("bot_id",m.bot_id).eq("renter_id",m.renter_id).maybeSingle();
- if(ex)await db.from("rentals").update({status:"active",stripe_subscription_id:s.subscription,cancel_at_period_end:false,paused_reason:null,price_cents:b!.price_cents,billing_period:b!.billing_period}).eq("id",ex.id);
- else await db.from("rentals").insert({bot_id:m.bot_id,renter_id:m.renter_id,stripe_subscription_id:s.subscription})}
+import {cors,json,admin,user,hex} from "../_shared/util.ts";
+import {fingerprint,similarity} from "../_shared/fingerprint.ts";
 Deno.serve(async req=>{
- const raw=await req.text(),sig=req.headers.get("stripe-signature")??"";
- const p=Object.fromEntries(sig.split(",").map(x=>x.split("=") as [string,string])),t=p.t;
- if(!t||Math.abs(Date.now()/1000-Number(t))>300)return json({error:"stale"},400);
- if(await hmac(Deno.env.get("STRIPE_WEBHOOK_SECRET")!,`${t}.${raw}`)!==p.v1)return json({error:"bad signature"},400);
- const ev=JSON.parse(raw),o=ev.data.object,db=admin();
- try{
-  if(ev.type==="checkout.session.completed")await(o.mode==="subscription"?subscribed(db,o):verificationPaid(db,o));
-  else if(ev.type==="customer.subscription.deleted")await db.from("rentals").update({status:"cancelled",live:false,paused_reason:"Subscription ended"}).eq("stripe_subscription_id",o.id);
-  else if(ev.type==="customer.subscription.updated"&&["past_due","unpaid"].includes(o.status))await db.from("rentals").update({live:false,paused_reason:"Payment failed"}).eq("stripe_subscription_id",o.id).eq("live",true);
-  else if(ev.type==="charge.dispute.created")await db.from("audit_log").insert({action:`dispute ${o.id} ${o.amount} ${o.reason}`,target:String(o.payment_intent??o.charge)});
-  else if(ev.type==="account.updated")await db.from("profiles").update({payouts_enabled:!!(o.charges_enabled&&o.payouts_enabled)}).eq("stripe_account_id",o.id);
- }catch(e){return json({error:(e as Error).message},500)}
- return json({ok:true});
+ if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
+ const u=await user(req);if(!u)return json({error:"Sign in first"},401);
+ const{bot_id,path}=await req.json().catch(()=>({}));const db=admin();
+ if(typeof path!=="string"||!path.startsWith(`${u.id}/${bot_id}/`)||!path.endsWith(".py"))return json({error:"Bad path"},400);
+ const{data:bot}=await db.from("bots").select("id,creator_id").eq("id",bot_id).maybeSingle();
+ if(!bot||bot.creator_id!==u.id)return json({error:"Bot not found"},404);
+ const{data:act}=await db.from("verification_runs").select("id").eq("bot_id",bot_id).eq("kind","verification").in("state",["pending","running"]);
+ if(act?.length)return json({error:"Wait for the current verification run to finish"},409);
+ const{data:f,error}=await db.storage.from("bot-code").download(path);if(error||!f)return json({error:"File not found"},404);
+ const buf=await f.arrayBuffer();if(buf.byteLength>200_000)return json({error:"File is over 200 KB"},400);
+ let text:string;try{text=new TextDecoder("utf-8",{fatal:true}).decode(buf)}catch{return json({error:"This is not a text file. A bot must be a Python source file (.py)"},400)}
+ if(text.includes("\u0000"))return json({error:"This is not a text file. A bot must be a Python source file (.py)"},400);
+ if(!/^def\s+decide\s*\(/m.test(text))return json({error:"Bot must define a top-level function: def decide(candles, markets)"},400);
+ const fp=fingerprint(text);
+ const sha=hex(await crypto.subtle.digest("SHA-256",buf));
+ const{data:last}=await db.from("bot_versions").select("version").eq("bot_id",bot_id).order("version",{ascending:false}).limit(1);
+ const{data:v,error:e2}=await db.from("bot_versions").insert({bot_id,version:(last?.[0]?.version??0)+1,code_sha256:sha,storage_path:path,fingerprint:fp}).select("id,version").single();
+ if(e2)return json({error:e2.message},500);
+ if(fp){const{data:others}=await db.from("bot_versions").select("bot_id,fingerprint,bots!bot_versions_bot_id_fkey(creator_id)").neq("bot_id",bot_id).not("fingerprint","is",null).limit(3000);
+  for(const o of others??[]){if((o.bots as any)?.creator_id===u.id)continue;const sim=similarity(fp,o.fingerprint as number[]);if(sim>=0.7)await db.from("code_flags").insert({bot_id,other_bot_id:o.bot_id,similarity:sim})}}
+ await db.from("verification_runs").update({state:"failed",result:{reason:"New version uploaded"}}).eq("bot_id",bot_id).eq("kind","track").in("state",["pending","running"]);
+ await db.from("bots").update({current_version_id:v.id,verification:"none",code_check:"pending",code_check_notes:[]}).eq("id",bot_id);
+ return json({version:v.version,sha256:sha});
 });

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://ticktrading.web.app/sitemap.xml

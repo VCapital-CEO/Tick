@@ -3,6 +3,9 @@ import {mkdtempSync,writeFileSync,rmSync,chmodSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {BINANCE as BASE} from "./config.js";
+import {oneAlpaca} from "./alpaca.js";
+import {oneKraken} from "./kraken.js";
+import {step,CAPITAL} from "./engine.js";
 const HOUR=3600e3,sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const MASTER=Buffer.from(process.env.KEY_ENCRYPTION_SECRET||"","base64");
 const filters=new Map();let bnbCache=0;
@@ -84,6 +87,9 @@ async function decide(db,r,mk,cs,sandbox,s){
 
 async function one(db,r,ctx){
  const{SYM,halt,candles,sandbox}=ctx,log=ctx.log||console.error,c=r.exchange_connections;if(!c)return;
+ if(c.exchange==="kraken")return oneKraken({dec,save,rec,stop,equityOf,decide},db,r,ctx);
+ if(c.exchange==="alpaca")return oneAlpaca({dec,save,rec,stop,equityOf,decide},db,r,ctx);
+ if(/data-api/.test(BASE))return;  // this host serves market data only, so Binance trading is skipped
  let s=r.live_state&&r.live_state.cash!=null?r.live_state:null;
  const hasPos=s&&Object.values(s.pos||{}).some(p=>p.qty>0);
  const active=r.live&&r.status==="active"&&!halt&&r.bots.verification==="verified";
@@ -128,11 +134,43 @@ async function one(db,r,ctx){
 
 export async function liveTick(db,ctx){
  const log=ctx.log||console.error;
- const{data:rs}=await db.from("rentals").select("*,bots(id,name,markets,verification),exchange_connections(api_key_enc,api_secret_enc)").not("connection_id","is",null);
+ const{data:rs}=await db.from("rentals").select("*,bots(id,name,markets,verification),exchange_connections(exchange,api_key_enc,api_secret_enc)").not("connection_id","is",null);
  bnbCache=0;
  for(const r of rs??[]){
   try{await one(db,r,ctx)}
   catch(e){await log("live "+r.id,e.message);
+   if(/^alpaca 40[13]/.test(e.message)){await stop(db,r,"Alpaca access was revoked or expired. Sell any open positions in your Alpaca account yourself, then reconnect.");continue}
+   if(e.auth){await stop(db,r,"Kraken rejected this API key (deleted or permissions changed). Sell any open positions on Kraken yourself, then reconnect with a new key.");continue}
    const s=r.live_state?.cash!=null?r.live_state:null,n=(s?.errors??0)+1;
    if(!s||n>=3)await stop(db,r,"Stopped after repeated errors: "+e.message.slice(0,120));
    else await db.from("rentals").update({live_state:{...s,errors:n}}).eq("id",r.id)}}}
+
+
+// Paper rentals: every active rental that is not trading live runs the bot's current version in a simulated account of its own.
+// Nothing here touches the shared bot stats or the public charts.
+export async function paperTick(db,ctx){
+ const{SYM,VOL,candles,sandbox}=ctx,log=ctx.log||console.error,t0=Date.now();
+ const slot=new Date(Math.floor(Date.now()/HOUR)*HOUR).toISOString();
+ const{data:rs}=await db.from("rentals").select("id,bot_id,paper_state,bots(id,markets,current_version_id,code_check)").eq("status","active").eq("live",false);
+ for(const r of rs??[]){
+  if(Date.now()-t0>150e3)break;   // out of time budget: the rest are picked up on the next run
+  const b=r.bots;if(!b||!b.current_version_id||!["passed","warned"].includes(b.code_check))continue;
+  const st=r.paper_state?.cash!=null?r.paper_state:{cash:CAPITAL,pos:{},bot_state:{},errors:0,trades:0,realized:0,start:slot};
+  if(st.slot===slot)continue;
+  const mk=(b.markets||[]).filter(m=>SYM[m]).slice(0,10);if(!mk.length)continue;
+  const dir=mkdtempSync(join(tmpdir(),"relay-paper-"));
+  try{
+   const{data:v}=await db.from("bot_versions").select("storage_path").eq("id",b.current_version_id).maybeSingle();
+   if(!v)throw new Error("version not found");
+   const{data:blob,error}=await db.storage.from("bot-code").download(v.storage_path);if(error)throw new Error("code download failed");
+   writeFileSync(join(dir,"bot.py"),Buffer.from(await blob.arrayBuffer()),{mode:0o644});chmodSync(dir,0o755);
+   const cs={},prices={};for(const m of mk){cs[m]=await candles(m);prices[m]=cs[m].at(-1).c}
+   let targets={};
+   try{const o=await sandbox(dir,{markets:mk,candles:cs,state:st.bot_state||{}});targets=o.targets||{};if(JSON.stringify(o.state||{}).length<16000)st.bot_state=o.state;st.errors=0}
+   catch(e){st.errors=(st.errors??0)+1;log("paper "+r.id,e.message)}
+   const{fills,equity}=step(st,prices,targets,VOL);
+   st.trades=(st.trades??0)+fills.length;st.realized=(st.realized??0)+fills.reduce((a,f)=>a+(+f.realized_pnl||0),0);st.slot=slot;
+   await db.from("rental_snapshots").upsert({rental_id:r.id,ts:slot,equity});
+   await db.from("rentals").update({paper_state:st}).eq("id",r.id);
+  }catch(e){log("paper "+r.id,e.message)}
+  finally{rmSync(dir,{recursive:true,force:true})}}}

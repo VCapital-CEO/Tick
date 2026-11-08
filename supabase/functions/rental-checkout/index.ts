@@ -5,8 +5,11 @@ Deno.serve(async req=>{
  const u=await user(req);if(!u)return json({error:"Sign in first"},401);
  const{bot_id}=await req.json().catch(()=>({}));const db=admin(),cfg=await config(db);
  if(cfg.payments_enabled!=="true")return json({error:"Payments are not enabled"},409);
- const{data:b}=await db.from("bots").select("id,name,slug,price_cents,billing_period,listed,creator_id,profiles(stripe_account_id,payouts_enabled)").eq("id",bot_id).maybeSingle();
+ // A paid rental has to be able to trade with real money, so nobody pays for a simulated run.
+ if(cfg.live_execution_enabled!=="true")return json({error:"Paid rentals open when live trading opens"},409);
+ const{data:b}=await db.from("bots").select("id,name,slug,price_cents,billing_period,listed,verification,creator_id,profiles(stripe_account_id,payouts_enabled)").eq("id",bot_id).maybeSingle();
  if(!b||!b.listed)return json({error:"Bot not found"},404);
+ if(b.verification!=="verified")return json({error:"Only verified bots can be rented for money"},409);
  if(b.creator_id===u.id)return json({error:"You cannot rent your own bot"},409);
  if(b.price_cents<=0)return json({error:"This bot is free"},409);
  const pr=b.profiles as unknown as {stripe_account_id:string|null,payouts_enabled:boolean};

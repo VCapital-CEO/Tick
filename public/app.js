@@ -1,7 +1,8 @@
 // Optional error monitoring: set sentryDsn in config.js. Nothing is loaded without it.
 if(CFG.sentryDsn){const s=document.createElement("script");s.src="https://browser.sentry-cdn.com/8.35.0/bundle.min.js";s.crossOrigin="anonymous";
  s.onload=()=>{try{Sentry.init({dsn:CFG.sentryDsn,environment:location.hostname,tracesSampleRate:0.05})}catch{}};document.head.appendChild(s)}
-const sb=window.supabase.createClient(CFG.url,CFG.key);
+const sb=window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:"tick-auth"}});
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}  // ask the browser not to evict the saved sign-in
 let MARKETS=[];const selected=new Set();
 const marketsReady=sb.from("markets").select("symbol,quote_volume_24h").eq("tradable",true).order("quote_volume_24h",{ascending:false}).limit(1000).then(({data})=>{MARKETS=(data||[]).map(x=>x.symbol)});
 const TYPES={trend:"Trend following",mean_reversion:"Mean reversion",grid:"Grid",arbitrage:"Arbitrage",momentum:"Momentum",other:"Other"};
@@ -78,9 +79,11 @@ async function route(){
  finally{v.removeAttribute("aria-busy")}}
 async function route0(){
  const pm=location.pathname.match(/^\/(bots|u)\/([^/]+)/),h=(location.hash||"#/market").split("/");
- document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("tabon",b.dataset.h===(location.hash||"#/market")));
+ document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("tabon",b.dataset.h===(location.hash||"#/market")||(b.dataset.h==="#/feed"&&/^#\/g(roups)?(\/|$)/.test(location.hash))));
  if(pm&&pm[1]==="u")return profile(decodeURIComponent(pm[2]));
  if(h[1]==="feed")return feed();
+ if(h[1]==="g")return feed(decodeURIComponent(h[2]||""));
+ if(h[1]==="groups")return groupsView();
  if(h[1]==="admin")return adminView();
  if(h[1]==="creator")return creatorView();
  if(h[1]==="rentals")return rentalsView();
@@ -136,11 +139,14 @@ async function detail(id){
  const ver=mine?await q(sb.from("bot_versions").select("version,check_state,check_report").eq("bot_id",id).order("version",{ascending:false}).limit(1)):[],cs=ver[0]?.check_state;
  const cfg=Object.fromEntries((await q(sb.from("app_config").select("*"))).map(r=>[r.key,r.value]));
  const conns=me&&rent?await q(sb.from("exchange_connections").select("id,label,key_hint")):[];
- const live=!rent||mine?"":cfg.live_execution_enabled!=="true"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Not enabled on Tick yet. Rentals run in paper mode.</div></div>':b.verification!=="verified"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Only verified bots can trade live.</div></div>':prof?.kyc_status!=="verified"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Verify your identity first: open Settings and choose Verify identity.</div></div>':rent.live?`<div class="post" style="margin:0"><b>Live trading is on</b><div class="note">Allocation $${rent.allocation_usd}. Daily loss limit ${rent.max_daily_loss_pct}%. The bot only trades the USDT you allocated, never your other holdings. Updates hourly.</div><button class="btn ghost" id="lvStop" style="margin-top:8px">Stop and sell positions</button></div>`:`<div class="post" style="margin:0"><b>Live trading</b>${rent.paused_reason?`<div class="note neg">Stopped: ${esc(rent.paused_reason)}</div>`:""}
-  <div class="note">Use a Binance key with trading on and withdrawals off. Tick checks this when you save it. Limit: $${cfg.max_live_allocation_usd} per rental during the beta. You can lose money.${cfg.worker_ip?` If your key has an IP allowlist, add ${esc(cfg.worker_ip)}.`:""}</div>
+ const live=!rent||mine?"":cfg.live_execution_enabled!=="true"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Not enabled on Tick yet. Rentals run in paper mode.</div></div>':b.verification!=="verified"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Only verified bots can trade live.</div></div>':prof?.kyc_status!=="verified"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Verify your identity first: open Settings and choose Verify identity.</div></div>':rent.live?`<div class="post" style="margin:0"><b>Live trading is on</b><div class="note">Allocation $${rent.allocation_usd}. Daily loss limit ${rent.max_daily_loss_pct}%. The bot only trades the cash you allocated, never your other holdings. Updates hourly.</div><button class="btn ghost" id="lvStop" style="margin-top:8px">Stop and sell positions</button></div>`:`<div class="post" style="margin:0"><b>Live trading</b>${rent.paused_reason?`<div class="note neg">Stopped: ${esc(rent.paused_reason)}</div>`:""}
+  <div class="note">Live trading runs on your own Kraken account with an API key you create. Make the key trade-only: no withdrawal permission, ever. Tick refuses any key that can withdraw. Limit: $${cfg.max_live_allocation_usd} per rental during the beta. You can lose money.</div>
   ${conns.length?`<label class="note" style="display:block;margin-top:8px">Key<select id="lvKey">${conns.map(c=>`<option value="${c.id}">${esc(c.label)} (…${esc(c.key_hint)})</option>`).join("")}</select></label>`:""}
-  <details style="margin-top:8px"><summary class="note">Add a Binance key</summary><div class="two" style="margin-top:6px"><input id="kLabel" placeholder="Label" maxlength="40"><input id="kKey" placeholder="API key" autocomplete="off"></div><input id="kSecret" type="password" placeholder="API secret" autocomplete="off" style="margin-top:6px"><button class="btn ghost" id="kSave" style="margin-top:6px">Check and save key</button></details>
-  <div class="two" style="margin-top:8px"><label class="note">Allocation (USDT)<input id="lvAlloc" type="number" min="10" max="${esc(cfg.max_live_allocation_usd)}" value="10"></label><label class="note">Daily loss limit (%)<input id="lvLoss" type="number" min="1" max="50" value="5"></label><label class="note">Max drawdown (%)<input id="lvDD" type="number" min="5" max="80" value="20"></label><label class="note">Stop-loss per position (%, optional)<input id="lvSL" type="number" min="1" max="50" placeholder="none"></label></div>
+  <details style="margin-top:8px"><summary class="note" style="cursor:pointer">Add a Kraken key</summary>
+   <ol class="note" style="margin:8px 0 8px 18px"><li>In Kraken, open Security, API, Create API key.</li><li>Turn on: Query funds, Query open orders and trades, Query closed orders and trades, Create and modify orders, Cancel and close orders.</li><li>Leave every withdrawal and deposit permission off, and leave the IP restriction empty.</li><li>Paste the key and private key below. Use a key made just for Tick.</li></ol>
+   <div class="two"><label class="note">Name<input id="kLabel" maxlength="40" placeholder="e.g. Tick key" autocomplete="off"></label><label class="note">API key<input id="kKey" autocomplete="off" spellcheck="false"></label><label class="note">Private key<input id="kSecret" type="password" autocomplete="off" spellcheck="false"></label></div>
+   <button class="btn ghost" id="kSave" style="margin-top:8px">Check and save key</button></details>
+  <div class="two" style="margin-top:8px"><label class="note">Allocation (USD)<input id="lvAlloc" type="number" min="10" max="${esc(cfg.max_live_allocation_usd)}" value="10"></label><label class="note">Daily loss limit (%)<input id="lvLoss" type="number" min="1" max="50" value="5"></label><label class="note">Max drawdown (%)<input id="lvDD" type="number" min="5" max="80" value="20"></label><label class="note">Stop-loss per position (%, optional)<input id="lvSL" type="number" min="1" max="50" placeholder="none"></label></div>
   <button class="btn" id="lvStart" style="margin-top:8px">Start live trading</button></div>`;
  $("detailBody").innerHTML=`<div class="sheet-top"><div><h2 tabindex="-1" id="dTitle">${esc(b.name)}</h2><div class="sheet-sub">${av(b.creator_name,b.creator_color)}<a class="lnk" href="/u/${esc(b.creator_handle)}">${esc(b.creator_handle)}</a>${ring(b.creator_score)}<span>${esc(TYPES[b.strategy])}</span><span>${stars(b)}</span></div></div>
  <div class="row" style="flex-wrap:nowrap">${codeChip(b)}${badge(b.verification)}<button class="icon" id="dClose" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>
@@ -157,7 +163,7 @@ async function detail(id){
  <label class="note" style="display:block">Upload new code (.py)<input id="dFile" type="file" accept=".py"></label></section>`:""}
  </div>
  <aside class="buy"><div class="price">${b.price_cents?`$${(b.price_cents/100).toFixed(b.price_cents%100?2:0)} <small>per ${b.billing_period}</small>`:"Free"}</div>
- ${mine?`<p class="note" style="margin-top:12px">This is your bot. Change its price and description under My bots.</p>`:`<button class="btn big block" id="dRent" style="margin-top:16px">${on?"Cancel rental":b.price_cents?"Rent this bot":"Try this bot free"}</button>
+ ${mine?`<p class="note" style="margin-top:12px">This is your bot. Change its price and description under My bots.</p>`:`<button class="btn big block" id="dRent" style="margin-top:16px" ${!on&&b.price_cents>0&&!(cfg.payments_enabled==="true"&&cfg.live_execution_enabled==="true"&&b.verification==="verified")?"disabled":""}>${on?"Cancel rental":b.price_cents?((cfg.payments_enabled==="true"&&cfg.live_execution_enabled==="true"&&b.verification==="verified")?"Rent this bot":b.verification!=="verified"?"Rentable once verified":"Paid rentals open with live trading"):"Try this bot free (simulated)"}</button>
  <ul><li>Starts in paper mode, with no money at risk</li><li>Live trading is optional and uses your own exchange key</li><li>${b.price_cents?"Billed through Stripe. Cancel any time":"Cancel any time"}</li></ul>
  <button class="lnk" id="dReport" style="font-weight:500;color:var(--mute)">Report this bot</button>`}
  <p class="note" style="margin-top:14px">Past results do not predict future returns. Use exchange keys with trading on and withdrawals off.</p></aside></div>`;
@@ -167,9 +173,9 @@ async function detail(id){
   if(!on&&cfg.payments_enabled==="true"&&b.price_cents>0){const r=await fn("rental-checkout",{bot_id:id});location.href=r.checkout_url;return}
   if(rent)await q(sb.from("rentals").update({status:on?"cancelled":"active"}).eq("id",rent.id));else await q(sb.from("rentals").insert({bot_id:id,renter_id:me.id}));
   toast(on?"Rental cancelled":"Rented "+b.name);$("detail").close()};
- const ks=$("kSave");if(ks)ks.onclick=async()=>{await fn("exchange-keys",{exchange:"binance",label:$("kLabel").value,api_key:$("kKey").value,api_secret:$("kSecret").value});toast("Key saved");detail(id)};
- const ls=$("lvStart");if(ls)ls.onclick=async()=>{const kid=$("lvKey")?.value;if(!kid){toast("Add a key first");return}
-  if(!confirm("Tick's worker will place real market orders on your Binance account with the amount you allocated. You can lose some or all of it. Continue?"))return;
+ const ks=$("kSave");if(ks)ks.onclick=async()=>{await fn("exchange-keys",{exchange:"kraken",label:$("kLabel").value,api_key:$("kKey").value,api_secret:$("kSecret").value});toast("Key checked and saved");detail(id)};
+ const ls=$("lvStart");if(ls)ls.onclick=async()=>{const kid=$("lvKey")?.value;if(!kid){toast("Add your Kraken key first");return}
+  if(!confirm("Tick's worker will place real market orders on your Kraken account with the amount you allocated. You can lose some or all of it. Continue?"))return;
   await q(sb.from("rentals").update({connection_id:kid,allocation_usd:+$("lvAlloc").value,max_daily_loss_pct:+$("lvLoss").value,max_drawdown_pct:+$("lvDD").value,stop_loss_pct:$("lvSL").value?+$("lvSL").value:null,live:true,paused_reason:null}).eq("id",rent.id));toast("Live trading started");$("detail").close();route()};
  const lx=$("lvStop");if(lx)lx.onclick=async()=>{await q(sb.from("rentals").update({live:false}).eq("id",rent.id));toast("Stopping. Positions are sold within 10 minutes");$("detail").close()};
  const vb=$("dVerify");if(vb)vb.onclick=async()=>{const r=await fn("start-verification",{bot_id:id});if(r.checkout_url)location.href=r.checkout_url;else{toast("Verification started");$("detail").close();route()}};
@@ -181,26 +187,73 @@ async function detail(id){
  const gb=$("rGo");if(gb)gb.onclick=async()=>{const t=$("rText").value.trim();if(!t){toast("Write a short review first");return}
   await q(sb.from("reviews").insert({bot_id:id,rental_id:rent.id,reviewer_id:me.id,rating:+$("rStars").value,body:t}));toast("Review posted");$("detail").close();route()}}
 
-async function feed(){
+const go=h=>{history.pushState(null,"","/"+h);route()};
+const NIL="00000000-0000-0000-0000-000000000000";
+const slugify=n=>n.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,30);
+const gchip=p=>p.group_slug?`<button class="chip" data-go="#/g/${esc(p.group_slug)}" style="border:0;cursor:pointer">${esc(p.group_name)}</button>`:"";
+async function myGroups(){return me?await q(sb.from("group_members").select("group_id,role").eq("user_id",me.id)):[]}
+async function joinLeave(g,mine){
+ if(!me){$("auth").showModal();return}
+ if(mine.has(g.id)){if(mine.get(g.id)==="mod"&&!confirm("You moderate this group. Leave anyway?"))return;await q(sb.from("group_members").delete().eq("group_id",g.id).eq("user_id",me.id))}
+ else await q(sb.from("group_members").insert({group_id:g.id,user_id:me.id}))}
+
+async function feed(slug){
+ const[groups,mem]=await Promise.all([q(sb.from("group_cards").select("*").order("members",{ascending:false}).order("name")),myGroups()]);
+ const mine=new Map(mem.map(m=>[m.group_id,m.role])),G=slug?groups.find(g=>g.slug===slug):null;
+ if(slug&&!G){$("view").innerHTML='<div class="empty"><b>Group not found</b>It may have been removed. <button class="btn ghost" data-go="#/groups" style="margin-left:8px">Browse groups</button></div>';document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));return}
  let fq=sb.from("post_feed").select("*").order("created_at",{ascending:false}).limit(feedLimit);
- if(feedScope==="following"&&me){const f=await q(sb.from("follows").select("followee_id").eq("follower_id",me.id));fq=fq.in("author_id",f.map(x=>x.followee_id).concat([me.id]))}
- const[ps,top]=await Promise.all([q(fq),q(sb.from("profiles").select("handle,display_name,color,relay_score").not("relay_score","is",null).order("relay_score",{ascending:false}).limit(5))]);
+ if(G)fq=fq.eq("group_id",G.id);
+ else if(feedScope==="following"&&me){const f=await q(sb.from("follows").select("followee_id").eq("follower_id",me.id));fq=fq.in("author_id",f.map(x=>x.followee_id).concat([me.id]))}
+ else if(feedScope==="groups"&&me){const ids=[...mine.keys()];fq=fq.in("group_id",ids.length?ids:[NIL])}
+ const[ps,top]=await Promise.all([q(fq),G?[]:q(sb.from("profiles").select("handle,display_name,color,relay_score").not("relay_score","is",null).order("relay_score",{ascending:false}).limit(5))]);
  let liked=[];if(me){liked=(await q(sb.from("post_likes").select("post_id").eq("user_id",me.id))).map(x=>x.post_id)}
- $("view").innerHTML=`<div class="phead"><div><h1>Community</h1><p>Updates from creators and renters. Be specific and be kind.</p></div><div class="seg" role="group" aria-label="Show posts from"><button class="${feedScope==="all"?"on":""}" data-fs="all">Everyone</button><button class="${feedScope==="following"?"on":""}" data-fs="following">Following</button></div></div>
- <div class="feedwrap"><div>
- ${me?`<div class="post compose"><textarea id="pText" rows="2" maxlength="280" placeholder="Share what you are building or watching" aria-label="New post"></textarea><div class="row" style="margin-top:10px"><span class="note">Up to 280 characters</span><button class="btn" id="pGo">Post</button></div></div>`:'<div class="post"><b>Join the conversation.</b> <button class="lnk" id="feedSign">Sign in</button> to post, like and comment.</div>'}
- ${ps.length?ps.map(p=>`<article class="post"><div class="who">${av(p.display_name,p.color)}<div><a class="lnk" href="/u/${esc(p.handle)}" style="color:var(--ink)">${esc(p.handle)}</a>${p.system?` <span class="seal">${SEAL}Tick</span>`:""}<div class="note">${ago(p.created_at)}</div></div></div><p>${esc(p.body)}</p>
- <div style="display:flex;gap:16px;margin-top:12px"><button class="lnk" style="color:var(--ink2)" data-like="${p.id}" aria-pressed="${liked.includes(p.id)}">${liked.includes(p.id)?"Liked":"Like"}${p.likes?` (${p.likes})`:""}</button><button class="lnk" style="color:var(--ink2)" data-cm="${p.id}">Comments</button><button class="lnk" style="color:var(--mute);font-weight:500" data-report="${p.id}">Report</button></div><div id="cm-${p.id}"></div></article>`).join(""):'<div class="empty"><b>Nothing here yet</b>Post an update to start the conversation.</div>'}
- ${ps.length>=feedLimit?'<div class="more"><button class="btn ghost" id="moreFeed">Show more posts</button></div>':""}</div>
- <aside class="sidebox"><h3>Top creators</h3>${top.map(t=>`<div class="lead">${av(t.display_name,t.color)}<div style="flex:1;min-width:0"><a class="lnk" href="/u/${esc(t.handle)}" style="color:var(--ink)">${esc(t.display_name)}</a><div class="note">@${esc(t.handle)}</div></div>${ring(t.relay_score)}</div>`).join("")||'<div class="note">Scores appear once creators have verified, rated bots.</div>'}<p class="note" style="margin-top:14px">Tick score blends renter ratings, verified bots and live record.</p></aside></div>`;
+ const isMod=g=>g&&(mine.get(g)==="mod"||(prof&&prof.is_admin)),joined=g=>g&&mine.has(g);
+ const opts=groups.filter(g=>mine.has(g.id)),dflt=G&&joined(G.id)?G.id:"";
+ const head=G?`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Community</button><h1>${esc(G.name)}${G.official?` <span class="seal">${SEAL}Official</span>`:""}</h1><p>${esc(G.description)||"No description yet."}</p><div class="note" style="margin-top:6px">${G.members} member${G.members==1?"":"s"}, ${G.posts_7d} post${G.posts_7d==1?"":"s"} this week</div></div><div><button class="btn ${joined(G.id)?"ghost":""}" id="gJoin">${joined(G.id)?(mine.get(G.id)==="mod"?"Moderator: leave":"Leave group"):"Join group"}</button></div></div>`
+  :`<div class="phead"><div><h1>Community</h1><p>Updates from creators and renters. Be specific and be kind.</p></div><div class="seg" role="group" aria-label="Show posts from"><button class="${feedScope==="all"?"on":""}" data-fs="all">Everyone</button><button class="${feedScope==="groups"?"on":""}" data-fs="groups">My groups</button><button class="${feedScope==="following"?"on":""}" data-fs="following">Following</button></div></div>`;
+ const compose=!me?'<div class="post"><b>Join the conversation.</b> <button class="lnk" id="feedSign">Sign in</button> to post, like and comment.</div>'
+  :G&&!joined(G.id)?'<div class="post"><b>Join this group to post.</b> You can still read and like posts.</div>'
+  :`<div class="post compose"><textarea id="pText" rows="2" maxlength="280" placeholder="${G?"Post to "+esc(G.name):"Share what you are building or watching"}" aria-label="New post"></textarea><div class="row" style="margin-top:10px"><span class="note">${G?"":`<select id="pGroup" aria-label="Post to"><option value="">Everyone</option>${opts.map(g=>`<option value="${g.id}" ${g.id===dflt?"selected":""}>${esc(g.name)}</option>`).join("")}</select> `}Up to 280 characters</span><button class="btn" id="pGo">Post</button></div></div>`;
+ const card=p=>`<article class="post"><div class="who">${av(p.display_name,p.color)}<div><a class="lnk" href="/u/${esc(p.handle)}" style="color:var(--ink)">${esc(p.handle)}</a>${p.system?` <span class="seal">${SEAL}Tick</span>`:""} ${G?"":gchip(p)}<div class="note">${ago(p.created_at)}</div></div></div><p>${esc(p.body)}</p>
+ <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap"><button class="lnk" style="color:var(--ink2)" data-like="${p.id}" aria-pressed="${liked.includes(p.id)}">${liked.includes(p.id)?"Liked":"Like"}${p.likes?` (${p.likes})`:""}</button><button class="lnk" style="color:var(--ink2)" data-cm="${p.id}">Comments${p.comments?` (${p.comments})`:""}</button>
+ ${me&&p.author_id===me.id?`<button class="lnk" style="color:var(--mute);font-weight:500" data-del="${p.id}">Delete</button>`:`<button class="lnk" style="color:var(--mute);font-weight:500" data-report="${p.id}">Report</button>`}
+ ${me&&p.author_id!==me.id&&isMod(p.group_id)?`<button class="lnk" style="color:var(--mute);font-weight:500" data-rm="${p.id}">Remove</button><button class="lnk" style="color:var(--mute);font-weight:500" data-ban="${p.group_id}|${p.author_id}">Ban from group</button>`:""}</div><div id="cm-${p.id}"></div></article>`;
+ const side=G?`<aside class="sidebox"><h3>About this group</h3><p class="note">${esc(G.description)||"No description yet."}</p><p class="note" style="margin-top:10px">${G.official?"Run by the Tick team.":"Created by a member."} Be kind, stay on topic, and report anything that breaks the rules. Moderators can remove posts and ban members.</p>${isMod(G.id)&&!G.official?`<details style="margin-top:12px"><summary class="note" style="cursor:pointer">Edit group</summary><label class="note" style="display:block;margin-top:8px">Description<textarea id="gDesc" rows="3" maxlength="280">${esc(G.description)}</textarea></label><button class="btn ghost" id="gSave" style="margin-top:6px">Save</button></details>`:""}<div style="margin-top:14px"><button class="lnk" data-go="#/groups">Browse all groups</button></div></aside>`
+  :`<aside class="sidebox"><h3>Groups</h3>${groups.slice(0,8).map(g=>`<div class="lead"><div style="flex:1;min-width:0"><button class="lnk" data-go="#/g/${esc(g.slug)}" style="color:var(--ink);text-align:left">${esc(g.name)}</button><div class="note">${g.members} member${g.members==1?"":"s"}</div></div>${joined(g.id)?'<span class="note">Joined</span>':`<button class="btn ghost" data-join="${g.id}" style="padding:4px 12px">Join</button>`}</div>`).join("")}<div style="margin:10px 0 22px"><button class="lnk" data-go="#/groups">Browse all groups or start one</button></div>
+  <h3>Top creators</h3>${top.map(t=>`<div class="lead">${av(t.display_name,t.color)}<div style="flex:1;min-width:0"><a class="lnk" href="/u/${esc(t.handle)}" style="color:var(--ink)">${esc(t.display_name)}</a><div class="note">@${esc(t.handle)}</div></div>${ring(t.relay_score)}</div>`).join("")||'<div class="note">Scores appear once creators have verified, rated bots.</div>'}<p class="note" style="margin-top:14px">Tick score blends renter ratings, verified bots and live record.</p></aside>`;
+ $("view").innerHTML=`${head}<div class="feedwrap"><div>${compose}
+ ${ps.length?ps.map(card).join(""):`<div class="empty"><b>Nothing here yet</b>${G?"Be the first to post in this group.":feedScope==="groups"?"Join a few groups to fill this feed.":feedScope==="following"?"Follow people to see their posts here.":"Post an update to start the conversation."}</div>`}
+ ${ps.length>=feedLimit?'<div class="more"><button class="btn ghost" id="moreFeed">Show more posts</button></div>':""}</div>${side}</div>`;
+ document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
  document.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>comments(b.dataset.cm));
  document.querySelectorAll("[data-fs]").forEach(b=>b.onclick=()=>{feedScope=b.dataset.fs;feedLimit=20;feed()});
- const mf=$("moreFeed");if(mf)mf.onclick=()=>{feedLimit+=20;feed()};
+ document.querySelectorAll("[data-join]").forEach(b=>b.onclick=async()=>{await joinLeave({id:b.dataset.join},mine);feed(slug)});
+ const gj=$("gJoin");if(gj)gj.onclick=async()=>{await joinLeave(G,mine);feed(slug)};
+ const gs=$("gSave");if(gs)gs.onclick=async()=>{await q(sb.from("groups").update({description:$("gDesc").value.trim()}).eq("id",G.id));toast("Group updated");feed(slug)};
+ const mf=$("moreFeed");if(mf)mf.onclick=()=>{feedLimit+=20;feed(slug)};
  const fsg=$("feedSign");if(fsg)fsg.onclick=()=>$("auth").showModal();
  document.querySelectorAll("[data-report]").forEach(e=>e.onclick=()=>me?report("post",e.dataset.report):$("auth").showModal());
- const g=$("pGo");if(g)g.onclick=async()=>{const t=$("pText").value.trim();if(t){await q(sb.from("posts").insert({author_id:me.id,body:t}));feed()}};
+ document.querySelectorAll("[data-del]").forEach(e=>e.onclick=async()=>{if(!confirm("Delete this post?"))return;await q(sb.from("posts").delete().eq("id",e.dataset.del));feed(slug)});
+ document.querySelectorAll("[data-rm]").forEach(e=>e.onclick=async()=>{if(!confirm("Remove this post from the group?"))return;await q(sb.from("posts").delete().eq("id",e.dataset.rm));feed(slug)});
+ document.querySelectorAll("[data-ban]").forEach(e=>e.onclick=async()=>{if(!confirm("Ban this person from the group? They are removed and cannot rejoin."))return;const[g,u]=e.dataset.ban.split("|");await q(sb.from("group_bans").insert({group_id:g,user_id:u}));toast("Banned from the group");feed(slug)});
+ const g=$("pGo");if(g)g.onclick=async()=>{const t=$("pText").value.trim();if(!t)return;const gid=G?G.id:($("pGroup")?.value||null);await q(sb.from("posts").insert({author_id:me.id,body:t,group_id:gid}));feed(slug)};
  document.querySelectorAll("[data-like]").forEach(e=>e.onclick=async()=>{if(!me){$("auth").showModal();return}const id=e.dataset.like;
-  await q(liked.includes(id)?sb.from("post_likes").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_likes").insert({post_id:id,user_id:me.id}));feed()})}
+  await q(liked.includes(id)?sb.from("post_likes").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_likes").insert({post_id:id,user_id:me.id}));feed(slug)})}
+
+async function groupsView(){
+ const[groups,mem]=await Promise.all([q(sb.from("group_cards").select("*").order("members",{ascending:false}).order("name")),myGroups()]);
+ const mine=new Map(mem.map(m=>[m.group_id,m.role]));
+ $("view").innerHTML=`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Community</button><h1>Groups</h1><p>Find people who trade the way you do, or start your own group.</p></div></div>
+ <div class="feedwrap"><div><input id="gFind" type="search" placeholder="Search groups" aria-label="Search groups" style="margin-bottom:12px"><div id="gList"></div></div>
+ <aside class="sidebox"><h3>Start a group</h3>${me?`<label class="note">Name<input id="ngName" maxlength="40" placeholder="e.g. Altcoin grid traders"></label><label class="note" style="display:block;margin-top:8px">What is it about?<textarea id="ngDesc" rows="3" maxlength="280"></textarea></label><button class="btn" id="ngGo" style="margin-top:8px">Create group</button><p class="note" style="margin-top:8px">You become its moderator. Up to 3 new groups per hour.</p>`:'<p class="note"><button class="lnk" id="gSign">Sign in</button> to start a group.</p>'}</aside></div>`;
+ const draw=()=>{const t=($("gFind").value||"").toLowerCase().trim(),l=groups.filter(g=>!t||g.name.toLowerCase().includes(t)||g.description.toLowerCase().includes(t));
+  $("gList").innerHTML=l.map(g=>`<div class="post row"><div style="min-width:0"><button class="lnk" data-go="#/g/${esc(g.slug)}" style="color:var(--ink);font-weight:600;text-align:left">${esc(g.name)}</button>${g.official?` <span class="seal">${SEAL}Official</span>`:""}<div class="note">${esc(g.description)}</div><div class="note">${g.members} member${g.members==1?"":"s"}, ${g.posts_7d} post${g.posts_7d==1?"":"s"} this week</div></div>${mine.has(g.id)?'<span class="note">Joined</span>':`<button class="btn ghost" data-join="${g.id}">Join</button>`}</div>`).join("")||'<div class="empty"><b>No groups match</b>Try another word, or start one.</div>';
+  document.querySelectorAll("#gList [data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  document.querySelectorAll("#gList [data-join]").forEach(b=>b.onclick=async()=>{await joinLeave({id:b.dataset.join},mine);groupsView()})};
+ draw();$("gFind").oninput=draw;document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+ const gs=$("gSign");if(gs)gs.onclick=()=>$("auth").showModal();
+ const ng=$("ngGo");if(ng)ng.onclick=async()=>{const name=$("ngName").value.trim(),slug=slugify(name);if(name.length<3||slug.length<3){toast("Give the group a name of at least 3 letters");return}
+  await q(sb.from("groups").insert({slug,name,description:$("ngDesc").value.trim(),created_by:me.id}));toast("Group created");go("#/g/"+slug)}}
 
 async function profile(handle){
  const p=await q(sb.from("profiles").select("*").eq("handle",handle).maybeSingle());
@@ -400,13 +453,18 @@ async function rentalsView(){
  const rs=await q(sb.from("rentals").select("*,bots(name,slug,verification)").eq("renter_id",prof.id).order("started_at",{ascending:false}));
  const keys=await q(sb.from("exchange_connections").select("id,label,key_hint,created_at"));
  const fl=rs.length?await q(sb.from("fills").select("rental_id,realized_pnl").in("rental_id",rs.map(r=>r.id))):[];
- $("view").innerHTML=`<div class="phead"><div><h1>My rentals</h1><p>Status, results and exchange keys for every bot you rent.</p></div><a class="btn ghost" href="/#/market">Browse bots</a></div>
+ const sn=rs.length?await q(sb.from("rental_snapshots").select("rental_id,equity").in("rental_id",rs.map(r=>r.id)).order("ts")):[];
+ $("view").innerHTML=`<div class="phead"><div><h1>My rentals</h1><p>Status, results and broker connections for every bot you rent.</p></div><a class="btn ghost" href="/#/market">Browse bots</a></div>
  ${rs.length?rs.map(r=>{const f=fl.filter(x=>x.rental_id===r.id),pnl=f.reduce((n,x)=>n+(+x.realized_pnl||0),0),ls=r.live_state||{},pos=Object.values(ls.pos||{}).filter(p=>p.qty>0).length;
  return`<section class="post"><div class="row"><div><h3><a href="/bots/${esc(r.bots.slug)}" style="text-decoration:none">${esc(r.bots.name)}</a></h3><div class="note" style="margin-top:4px">Rented ${new Date(r.started_at).toLocaleDateString()}, ${r.price_cents?`$${(r.price_cents/100).toFixed(2)} per ${r.billing_period}`:"free"}${r.cancel_at_period_end?", ends at period end":""}</div></div><span class="badge ${r.live?"live":""}">${r.status==="cancelled"?"Cancelled":r.live?"Live":"Paper"}</span></div>
  ${r.paused_reason?`<p class="neg" style="margin-top:12px;font-weight:500">Stopped: ${esc(r.paused_reason)}</p>`:""}
+ ${(()=>{const ps=r.paper_state;if(r.live||r.status!=="active")return"";const sp=sn.filter(x=>x.rental_id===r.id);
+  if(!ps||ps.cash==null||!sp.length)return'<p class="note" style="margin-top:12px">Your simulated run starts within the hour. Results appear here.</p>';
+  const eq=+sp.at(-1).equity,ret=(eq/10000-1)*100,np=Object.values(ps.pos||{}).filter(p=>Math.abs(p.qty)>0).length;
+  return`<div class="kpis sm" style="margin-top:16px"><div><b>$${num(eq,0)}</b><span>Simulated account</span></div><div><b class="${ret>=0?"pos":"neg"}">${ret>=0?"+":""}${num(ret,2)}%</b><span>Return since you started</span></div><div><b>${np}</b><span>Open position${np===1?"":"s"}</span></div><div><b>${ps.trades||0}</b><span>Simulated trades</span></div></div>${sp.length>1?sparkSVG(sp.map(x=>+x.equity)):""}<p class="note" style="margin-top:8px">Simulated with real market prices, updated every hour, starting from $10,000 of pretend money. Nothing here uses real money.</p>`})()}
  ${ls.cash!=null?`<div class="kpis sm" style="margin-top:16px"><div><b>${r.allocation_usd?"$"+num(r.allocation_usd,0):"Paper"}</b><span>Allocation</span></div><div><b>$${num(ls.cash,2)}</b><span>Cash</span></div><div><b>${pos}</b><span>Open position${pos===1?"":"s"}</span></div><div><b class="${pnl>=0?"pos":"neg"}">${pnl>=0?"+":"-"}$${Math.abs(pnl).toFixed(2)}</b><span>Realized profit, ${f.length} trades</span></div></div>`:""}
  <div class="actions">${r.live?`<button class="btn ghost" data-stop="${r.id}">Stop live trading</button>`:""}${r.status==="active"?`<button class="btn ghost" data-cancel="${r.id}">Cancel rental</button>`:""}</div></section>`}).join(""):'<div class="empty"><b>You are not renting any bots</b>Try one in paper mode first. It costs nothing and shows how the bot behaves.<div style="margin-top:14px"><a class="btn" href="/#/market">Browse the marketplace</a></div></div>'}
- <h2 class="sec-title">Exchange keys</h2>${keys.length?keys.map(k=>`<div class="post row"><span><b>${esc(k.label)}</b> <span class="mute">ends in ${esc(k.key_hint)}, added ${new Date(k.created_at).toLocaleDateString()}</span></span><button class="btn ghost" data-delkey="${k.id}">Remove</button></div>`).join(""):'<div class="note">No keys saved. You can add one from the page of a bot you rent.</div>'}
+ <h2 class="sec-title">Exchange keys</h2>${keys.length?keys.map(k=>`<div class="post row"><span><b>${esc(k.label)}</b> <span class="mute">key ending ${esc(k.key_hint)}, added ${new Date(k.created_at).toLocaleDateString()}</span></span><button class="btn ghost" data-delkey="${k.id}">Remove</button></div>`).join(""):'<div class="note">No exchange key saved. You can add one from the page of a bot you rent.</div>'}
  <h2 class="sec-title">Invoices</h2><button class="btn ghost" id="invBtn">Show invoices</button><div id="inv"></div>`;
  document.querySelectorAll("[data-stop]").forEach(b=>b.onclick=async()=>{await q(sb.from("rentals").update({live:false}).eq("id",b.dataset.stop));toast("Stopping. Positions are sold within 10 minutes");rentalsView()});
  document.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=async()=>{if(!confirm("Cancel this rental? Any live positions will be sold."))return;const rr=rs.find(x=>x.id===b.dataset.cancel);if(rr.stripe_subscription_id){await fn("cancel-rental",{rental_id:rr.id});toast("Ends at the end of the billing period")}else await q(sb.from("rentals").update({status:"cancelled",live:false}).eq("id",rr.id));rentalsView()});
@@ -445,8 +503,8 @@ const KYC={none:"Not verified",pending:"In review",failed:"Not verified: last at
 async function kycBox(){
  const box=$("kycBox");if(!box||!me)return;
  const{data}=await sb.from("profiles").select("kyc_status").eq("id",me.id).single(),st=data?.kyc_status||"none";
- const live=(await sb.from("app_config").select("value").eq("key","live_execution_enabled").maybeSingle()).data?.value==="true";
- box.innerHTML=`<div class="note" style="margin-top:14px"><b>Identity</b>: ${KYC[st]}. ${st==="verified"?"Your ID is verified. Tick keeps only the result, never your documents.":"Verification uses a government ID and a selfie, handled by Stripe. It opens when live trading launches and is required before it."}</div>${st==="verified"||st==="pending"||!live?"":`<button class="btn ghost" id="kycGo" style="margin-top:8px">Verify identity</button>`}`;
+ const live=((await sb.from("app_config").select("key,value").in("key",["kyc_enabled","live_execution_enabled"])).data||[]).some(r=>r.value==="true");
+ box.innerHTML=`<div class="note" style="margin-top:14px"><b>Identity</b>: ${KYC[st]}. ${st==="verified"?"Your ID is verified. Tick keeps only the result, never your documents.":"Verification uses a government ID and a selfie, handled by Stripe. It opens soon and is required before live trading."}</div>${st==="verified"||st==="pending"||!live?"":`<button class="btn ghost" id="kycGo" style="margin-top:8px">Verify identity</button>`}`;
  const go=$("kycGo");if(go)go.onclick=async()=>{go.disabled=true;const r=await fn("kyc-start",{});if(r.url)location.href=r.url;else{go.disabled=false}}}
 async function mfaBox(){
  const box=$("mfaBox"),f=(await sb.auth.mfa.listFactors()).data?.totp?.find(x=>x.status==="verified");

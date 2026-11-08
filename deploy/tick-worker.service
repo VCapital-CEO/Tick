@@ -1,0 +1,17 @@
+[Unit]
+Description=Tick worker (code checks, paper runs, live trading)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+User=tick
+WorkingDirectory=/opt/tick/worker
+EnvironmentFile=/etc/tick/worker.env
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -178,6 +178,7 @@ dialog::backdrop{background:rgba(8,22,27,.55)}
  main.wrap{padding-bottom:96px}.top-end{margin-left:auto}
  .filterbar .fld{flex:1 1 40%}.count{margin-left:0;width:100%}.sheet-top,.sheet-grid{padding-left:16px;padding-right:16px}
  .kpis{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}.p-head .score-box{margin-left:0}
+ .sheet-top{flex-wrap:wrap;gap:10px}.sheet-top>div:first-child{flex:1 1 100%}.sheet-top .row{flex-wrap:wrap!important;width:100%}.sheet-top .row .icon{margin-left:auto}.sheet-top .chip,.sheet-top .badge{white-space:nowrap}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.draw{stroke-dashoffset:0}}
 
@@ -192,7 +193,8 @@ body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
  -webkit-mask:radial-gradient(28% 20% at 95% 25%,#000 0,transparent 70%),radial-gradient(25% 18% at 3% 72%,#000 0,transparent 70%);
  mask:radial-gradient(28% 20% at 95% 25%,#000 0,transparent 70%),radial-gradient(25% 18% at 3% 72%,#000 0,transparent 70%)}
 h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-.025em}
-.top{background:rgba(5,7,10,.78);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.top{background:transparent}
+.top::before{content:"";position:absolute;inset:0;z-index:-1;background:rgba(5,7,10,.78);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}  /* the blur lives on a layer, because backdrop-filter on the header itself would trap the fixed bottom tab bar inside it */
 .brand{font:600 24px/1 var(--serif);letter-spacing:-.03em;color:var(--ink)}
 .brand svg{width:30px;height:26px;filter:drop-shadow(0 0 6px rgba(140,196,227,.45))}
 .btn{background:var(--ink);color:var(--accent-ink);border-color:var(--ink);box-shadow:0 0 18px rgba(140,196,227,.18)}
@@ -218,3 +220,4 @@ h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-.025em}
 .src-verified{border-color:currentColor}
 .src-live{background:var(--ink,#111);color:var(--bg,#fff);border-color:transparent}
 .src-note{margin-top:10px}
+.btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}

@@ -1,0 +1,2 @@
+alter table exchange_connections drop constraint if exists exchange_connections_exchange_check;
+alter table exchange_connections add constraint exchange_connections_exchange_check check (exchange in ('binance','alpaca','kraken'));

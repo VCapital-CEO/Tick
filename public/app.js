@@ -1,23 +1,27 @@
 // Optional error monitoring: set sentryDsn in config.js. Nothing is loaded without it.
 if(CFG.sentryDsn){const s=document.createElement("script");s.src="https://browser.sentry-cdn.com/8.35.0/bundle.min.js";s.crossOrigin="anonymous";
  s.onload=()=>{try{Sentry.init({dsn:CFG.sentryDsn,environment:location.hostname,tracesSampleRate:0.05})}catch{}};document.head.appendChild(s)}
-const sb=window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:"tick-auth"}});
+// Some browsers return a null Navigator lock during Supabase session refresh.
+// Keep auth usable across alternate accounts instead of repeatedly retrying the lock.
+const authLock=async(_name,_timeout,callback)=>callback();
+const sb=window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:"tick-auth",lock:authLock}});
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}  // ask the browser not to evict the saved sign-in
 let MARKETS=[];const selected=new Set();
 const marketsReady=sb.from("markets").select("symbol,quote_volume_24h").eq("tradable",true).order("quote_volume_24h",{ascending:false}).limit(1000).then(({data})=>{MARKETS=(data||[]).map(x=>x.symbol)});
 const TYPES={trend:"Trend following",mean_reversion:"Mean reversion",grid:"Grid",arbitrage:"Arbitrage",momentum:"Momentum",other:"Other"};
 const $=id=>document.getElementById(id);
+// Stable compatibility wrapper: route can call this before the rental renderer appears later in the file.
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let me=null,prof=null,bots=[],feedScope="all",feedLimit=20;
 function toast(t){const d=document.createElement("div");d.className="toast";d.setAttribute("role","status");d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
 async function fn(name,body){const{data:{session}}=await sb.auth.getSession();if(!session){$("auth").showModal();throw new Error("Sign in")}
  const r=await fetch(`${CFG.url}/functions/v1/${name}`,{method:"POST",headers:{"Content-Type":"application/json",apikey:CFG.key,Authorization:"Bearer "+session.access_token},body:JSON.stringify(body)});
- const j=await r.json().catch(()=>({}));if(!r.ok){toast(j.error||"Request failed");throw new Error(j.error)}return j}
+ const j=await r.json().catch(()=>({}));if(!r.ok){const msg=j.error||`Request failed (${r.status})`;toast(msg);throw new Error(msg)}return j}
 async function report(type,id){const reason=prompt("What is wrong with this? (max 500 characters)");if(!reason||!me)return;await q(sb.from("reports").insert({reporter_id:me.id,target_type:type,target_id:id,reason:reason.slice(0,500)}));toast("Report sent")}
 async function q(p){const{data,error}=await p;if(error){toast(error.message);throw error}return data}
 const SEAL='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 1.8 3-.2 1 2.8 2.5 1.7-.9 2.9.9 2.9-2.5 1.7-1 2.8-3-.2L12 22l-2.4-1.8-3 .2-1-2.8-2.5-1.7.9-2.9-.9-2.9 2.5-1.7 1-2.8 3 .2z"/><path d="M8.5 12.2l2.5 2.5 4.5-5" fill="none" stroke="var(--seal-bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CHECK='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-const av=(n,c)=>`<span class="av" style="background:${esc(c||"#5b717a")}">${esc((n||"?")[0]).toUpperCase()}</span>`;
+const av=(n,c,img)=>img?`<span class="av avatar-img" style="background-image:url(${esc(img)})" role="img" aria-label="${esc(n||"Profile photo")}"></span>`:`<span class="av" style="background:${esc(c||"#5b717a")}">${esc((n||"?")[0]).toUpperCase()}</span>`;
 const ring=(s,cls="")=>s==null?"":`<span class="ring ${cls}" style="--p:${+s}" title="Tick score ${+s} out of 100"><span>${+s}</span></span>`;
 const scoreChip=s=>s==null?"":`<span class="score-mini" title="Tick score ${Math.round(+s)} of 100">${Math.round(+s)}</span>`;
 const price=b=>b.price_cents?`$${(b.price_cents/100).toFixed(b.price_cents%100?2:0)}<small>per ${b.billing_period}</small>`:`Free<small>paper and live</small>`;
@@ -52,10 +56,13 @@ function wireCharts(root){
    tip.style.left=(x/W*r.width)+"px";tip.style.top=(y/h*r.height)+"px";tip.style.opacity=1;tip.textContent=(dates?dates[i]+"   ":"")+(pts[i]>=100?"+":"")+(pts[i]-100).toFixed(2)+"%"};
   const leave=()=>{xh.setAttribute("visibility","hidden");dh.setAttribute("visibility","hidden");tip.style.opacity=0};
   svg.addEventListener("pointermove",move);svg.addEventListener("pointerleave",leave)})}
+const STAFF_EMAILS=new Set(["innovationwithwesley@gmail.com"]);
+const isStaff=()=>!!me&&STAFF_EMAILS.has(String(me.email||"").toLowerCase());
 const SRC={paper:["Paper","Simulated trades on live market prices. No real money."],verified:["Verified paper","Simulated trades on live prices, run by Tick for a bot that paid for verification."],live:["Live","Real trades made by this bot for renters."]};
 const srcOf=b=>SRC[b.stats_source]||SRC.paper;
 const srcTag=b=>`<em class="src src-${b.stats_source||"paper"}" title="${esc(srcOf(b)[1])}">${srcOf(b)[0]}</em>`;
 function kpis(b){
+ if(!b.trades&&b.backtest?.result){const r=b.backtest.result;return`<div class="kpis historical"><div><b class="${r.ret>=0?"pos":"neg"}">${sgn(r.ret)}</b><span>30d simulated return</span></div><div><b>${num(r.dd)}%</b><span>Drawdown</span></div><div><b>${num(r.sharpe,2)}</b><span>Sharpe</span></div><div><b>${r.trades}</b><span>Trades</span></div></div><p class="note src-note">Historical backtest only; not verified and not a live trading record.</p>`}
  if(!b.trades)return'<div class="note" style="margin:22px 0 8px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">No record yet. This bot starts a free paper run as soon as it passes the code checks, and numbers appear after its first trades.</div>';
  const k=(v,l,c="")=>`<div><b class="${c}">${v}</b><span>${l}</span></div>`,r=b.ret_90d;
  return`<div class="kpis">${k(sgn(r),"Return",r>=0?"pos":"neg")}${k(num(b.max_dd)+"%","Max drawdown")}${k(num(b.sharpe,2),"Sharpe ratio")}${k(num(b.win_rate,0)+"%","Winning trades")}${k(b.trades,"Trades")}${k(b.days_live,"Days of record")}</div><p class="note src-note">${srcTag(b)} ${esc(srcOf(b)[1])} Results switch to real trades once the bot trades live for a renter.</p>`}
@@ -68,7 +75,7 @@ function card(b,o={}){
   <span class="bot-top"><span class="bot-tags">${ver}</span><span class="bot-score" style="--p:${Math.round(Number(b.creator_score)||0)}" title="Creator score"><b>${Math.round(Number(b.creator_score)||0)}</b></span></span>
   <span class="bot-name">${esc(b.name)}</span>
   <span class="bot-meta">${o.noCreator?"":av(b.creator_name,b.creator_color)+`<span class="bot-handle">@${esc(b.creator_handle)}</span>`}</span>
-  <span class="bot-empty"><b>${b.verification==="verified"?"Building its record":"No record yet"}</b><span>${b.verification==="verified"?"Verified. Numbers appear after the first trades.":"A free 30-day paper run starts once the code checks pass."}</span></span>
+  <span class="bot-empty">${b.backtest?.result?backtestSummary(b.backtest):`<b>${b.verification==="verified"?"Building its record":"No record yet"}</b><span>${b.verification==="verified"?"Verified. Numbers appear after the first trades.":"A free 30-day paper run starts once the code checks pass."}</span>`}</span>
   <span class="bot-foot"><span class="bot-price free"><b>Free</b><span>paper</span></span>${CTA}</span>
  </button>`;
  return `<button class="bot card${hot?" hot":""}" data-id="${b.id}" role="listitem">
@@ -84,15 +91,28 @@ const skeleton=()=>`<div class="grid-skel" aria-hidden="true">${Array.from({leng
 
 async function setUser(u){me=u||null;prof=null;
  if(me){const{data}=await sb.from("profiles").select("*").eq("id",me.id).maybeSingle();prof=data}
- $("authBtn").textContent=me?"Sign out":"Sign in";$("acct").style.display=me?"flex":"none";if(me)bell();$("navAdmin").style.display=prof&&prof.is_admin?"":"none";route()}
-function logClient(e){try{window.Sentry&&Sentry.captureException(e)}catch{}if(me)sb.from("error_log").insert({source:"client",message:String(e?.message||e).slice(0,500),user_id:me.id}).then(()=>{},()=>{})}
+ $("authBtn").textContent=me?"Sign out":"Sign in";$("acct").style.display=me?"flex":"none";if(me)bell();$("navAdmin").style.display=isStaff()?"":"none";const adminSheet=document.querySelector('#navSheet button[data-h="#/admin"]');if(adminSheet)adminSheet.style.display=isStaff()?"":"none";route()}
+async function attachBacktests(rows){
+ const ids=(rows||[]).map(x=>x.id).filter(Boolean);if(!ids.length)return rows||[];
+ const all=await q(sb.from("backtests").select("*").in("bot_id",ids).eq("state","done").order("created_at",{ascending:false}));
+ const latest=new Map();(all||[]).forEach(x=>{if(!latest.has(x.bot_id))latest.set(x.bot_id,x)});
+ return (rows||[]).map(x=>({...x,backtest:latest.get(x.id)||null}));
+}
+function backtestSummary(bt){const r=bt?.result;if(!r)return"";return`<span class="backtest-mini"><b>${num(r.ret)}%</b><span>30d simulated</span><em>DD ${num(r.dd)}% · Sharpe ${num(r.sharpe,2)} · ${r.trades} trades</em></span>`}
+function logClient(e){
+ try{if(window.Sentry)Sentry.captureException(e)}catch{}
+ // Do not write error_log from the browser: older deployments may not have the
+ // table/policy, and a failed diagnostic insert must never create a second error.
+}
 window.addEventListener("unhandledrejection",ev=>logClient(ev.reason));
+let navSeq=0;
 async function route(){
+ const seq=++navSeq;window.__navSeq=seq;
  const v=$("view");if(!v.innerHTML)v.innerHTML='<div class="empty">Loading…</div>';v.setAttribute("aria-busy","true");
- try{await route0()}catch(e){v.innerHTML='<div class="empty">Something went wrong. <button class="btn ghost" id="retry">Try again</button></div>';$("retry").onclick=route;logClient(e)}
+ try{await route0()}catch(e){if(seq!==window.__navSeq)return;const msg=String(e?.message||"");v.innerHTML=`<div class="empty"><b>Something went wrong.</b>${msg?`<p class="note" style="margin-top:8px">${esc(msg)}</p>`:""}<button class="btn ghost" id="retry" style="margin-top:14px">Try again</button></div>`;$("retry").onclick=route;logClient(e)}
  finally{v.removeAttribute("aria-busy")}}
 async function route0(){
- const pm=location.pathname.match(/^\/(bots|u)\/([^/]+)/),h=(location.hash||"#/market").split("/");
+ const pm=location.pathname.match(/^\/(bots|u)\/([^/]+)/),h=(location.hash||"#/feed").split("/");
  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("tabon",b.dataset.h===(location.hash||"#/market")||(b.dataset.h==="#/feed"&&/^#\/g(roups)?(\/|$)/.test(location.hash))));
  if(pm&&pm[1]==="u")return profile(decodeURIComponent(pm[2]));
  if(h[1]==="feed")return feed();
@@ -100,10 +120,11 @@ async function route0(){
  if(h[1]==="groups")return groupsView();
  if(h[1]==="admin")return adminView();
  if(h[1]==="creator")return creatorView();
- if(h[1]==="rentals")return rentalsView();
+ if(h[1]==="rentals")return window.rentalsView();
  if(h[1]==="u")return profile(h[2]);
  if(h[1]==="me"){if(!prof){$("view").innerHTML='<div class="empty">Sign in to see your profile.</div>';return}return profile(prof.handle)}
- await market();if(pm&&pm[1]==="bots"){const sl=decodeURIComponent(pm[2]),b=bots.find(x=>x.slug===sl)||(await sb.from("bot_cards").select("id").eq("slug",sl).maybeSingle()).data;if(b)detail(b.id)}}
+ if(h[1]==="market")return market();
+ if(!location.hash)history.replaceState(null,"","/#/feed");await feed();if(pm&&pm[1]==="bots"){const sl=decodeURIComponent(pm[2]),b=bots.find(x=>x.slug===sl)||(await sb.from("bot_cards").select("id").eq("slug",sl).maybeSingle()).data;if(b)detail(b.id)}}
 
 let mq={n:24};
 function heroProof(b){
@@ -116,7 +137,7 @@ function heroProof(b){
 async function market(){await marketsReady;
  $("view").innerHTML=`<section class="hero"><div class="hero-copy"><h1>Trading bots<br>with receipts.</h1>
  <p>Every bot here trades on live prices while Tick keeps the books. You see the curve, the drawdown and the reviews before you pay a cent.</p>
- <div class="hero-cta"><button class="btn big" id="browseBtn">Browse bots</button><button class="btn ghost big" id="listBtn">List your bot</button></div>
+ <div class="hero-cta"><button class="btn big" id="browseBtn">Browse bots</button>${me?"":`<button class="btn ghost big" id="listBtn">List your bot</button>`}</div>
 </div>
  <div id="heroProof"><div class="skel" style="height:404px;border-radius:24px"></div></div></section>
  <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
@@ -127,7 +148,7 @@ async function market(){await marketsReady;
  <label class="fld"><select id="fSort" aria-label="Sort"><option value="ret">Best return</option><option value="new">Newest</option><option value="rate">Best rated</option><option value="dd">Lowest drawdown</option><option value="price">Lowest price</option><option value="days">Longest record</option></select></label>
  <span class="count" id="fCount" aria-live="polite"></span></div>
  <div class="botlist" role="list"><div id="grid" class="cards">${skeleton()}</div></div><div class="more" id="moreBox"></div>
- <section class="closing"><div><h2>Your bot belongs on this board.</h2><p>List it, run the 30-day verification, and set your own price. Tick publishes the result, good or bad.</p></div><button class="btn big" data-listbot>List your bot</button></section>`;
+ ${me?"":`<section class="closing"><div><h2>Your bot belongs on this board.</h2><p>List it, run the 30-day verification, and set your own price. Tick publishes the result, good or bad.</p></div><button class="btn big" data-listbot>List your bot</button></section>`}`;
  sb.from("bot_cards").select("*").eq("verification","verified").not("spark","is",null).order("ret_90d",{ascending:false,nullsFirst:false}).limit(1).then(({data})=>{const el=$("heroProof");if(el){el.innerHTML=heroProof(data&&data[0]);wireCharts(el)}});
  let timer,tkDone=false;
  const f=async more=>{if(!more)mq.n=24;
@@ -137,9 +158,9 @@ async function market(){await marketsReady;
   if(MARKETS.includes(m))qy=qy.contains("markets",[m]);
   if(y)qy=qy.eq("strategy",y);if(v)qy=qy.eq("verification","verified");
   const o={new:["created_at",false],ret:["ret_90d",false],rate:["avg_rating",false],dd:["max_dd",true],price:["price_cents",true],days:["days_live",false]}[s];
-  const{data,count,error}=await qy.order(o[0],{ascending:o[1],nullsFirst:false}).range(0,mq.n-1);
+  let{data,count,error}=await qy.order(o[0],{ascending:o[1],nullsFirst:false}).range(0,mq.n-1);
   if(error){toast(error.message);return}
-  bots=data;$("fCount").textContent=`${count} bot${count===1?"":"s"}`;
+  data=await attachBacktests(data||[]);bots=data;$("fCount").textContent=`${count} bot${count===1?"":"s"}`;
   $("grid").innerHTML=data.length?data.map(b=>card(b)).join(""):'<div class="empty"><b>No bots match these filters</b>Clear a filter, or list a bot that fits.</div>';
   $("moreBox").innerHTML=count>data.length?'<button class="btn ghost" id="moreBtn">Show more bots</button>':"";
   const mb=$("moreBtn");if(mb)mb.onclick=()=>{mq.n+=24;f(true)};
@@ -161,7 +182,7 @@ async function market(){await marketsReady;
  await f()}
 
 async function detail(id){
- const b=bots.find(x=>x.id===id)||await q(sb.from("bot_cards").select("*").eq("id",id).single());
+ let b=bots.find(x=>x.id===id)||await q(sb.from("bot_cards").select("*").eq("id",id).single());b=(await attachBacktests([b]))[0];
  const rv=await q(sb.from("reviews").select("*,profiles(handle)").eq("bot_id",id).order("created_at",{ascending:false}));
  let rent=null;if(me){const{data}=await sb.from("rentals").select("*").eq("bot_id",id).eq("renter_id",me.id).maybeSingle();rent=data}
  const mine=me&&b.creator_id===me.id,on=rent&&rent.status==="active";
@@ -185,7 +206,7 @@ async function detail(id){
  <section id="trades"></section>
  <section><h3>Reviews${rv.length?` <span style="color:var(--mute);letter-spacing:0">· ${rv.length}</span>`:""}</h3>${rv.length?`<div class="rv-list">${rv.map(r=>`<div class="review"><div class="who-line">${av(r.profiles?.handle,"#3E4E5A")}<span class="handle">@${esc(r.profiles?.handle)}</span><span class="stars" aria-label="${r.rating} out of 5">${"★".repeat(r.rating)}</span></div><p>${esc(r.body)}</p>${r.reply?`<div class="reply"><b>Creator reply</b> ${esc(r.reply)}</div>`:""}${mine&&!r.reply?`<button class="lnk" data-reply="${r.id}" style="margin-top:10px;font-size:13px">Reply</button>`:""}${me&&r.reviewer_id===me.id?`<button class="lnk" data-editrv="${r.id}" style="margin-top:10px;margin-left:12px;font-size:13px">Edit</button>`:""}</div>`).join("")}</div>`:`<p class="note">No reviews yet. Renters can review after trying the bot.</p>`}</section>
  ${mine?`<section><h3>Verification</h3><div class="post">${checkPanel(ver[0])}<p class="note" style="margin-bottom:14px">${b.verification==="none"||b.verification==="failed"?"Every listed bot gets a free paper run on live market data, labelled Paper. Verification continues that same run for up to 30 days and awards the seal only if it passes. The fee covers the test and is paid once per bot: later versions are re-verified at no cost. It is not a guarantee.":b.verification==="verified"?"Verified. Uploading new code resets this.":"Run in progress. Stats update hourly."}</p>
- ${b.verification==="none"||b.verification==="failed"?`<button class="btn" id="dVerify" style="margin-bottom:14px"${cs==="passed"||cs==="warned"?"":" disabled"}>${cs==="pending"||cs==="running"?"Code checks running…":cs==="failed"?"Fix the code checks first":"Start verification"}</button>`:""}
+ ${b.verification==="none"||b.verification==="failed"?`<button class="btn" id="dVerify" style="margin-bottom:14px"${b.current_version_id&&(cs==="passed"||cs==="warned"||b.code_check==="passed"||b.code_check==="warned")?"":" disabled"}>${cs==="pending"||cs==="running"?"Code checks running…":cs==="failed"?"Fix the code checks first":"Start verification"}</button>`:""}
  <label class="note" style="display:block">Upload new code (.py)<input id="dFile" type="file" accept=".py"></label></div></section>`:""}
  </div>
  <aside class="buy"><div class="buy-kick">${b.price_cents?"Rental price":"Paper mode"}</div><div class="price">${b.price_cents?`$${(b.price_cents/100).toFixed(b.price_cents%100?2:0)} <small>per ${b.billing_period}</small>`:"Free"}</div>
@@ -205,7 +226,7 @@ async function detail(id){
   if(!confirm("Tick's worker will place real market orders on your Alpaca account with the amount you allocated. You can lose some or all of it. Continue?"))return;
   await q(sb.from("rentals").update({connection_id:kid,allocation_usd:+$("lvAlloc").value,max_daily_loss_pct:+$("lvLoss").value,max_drawdown_pct:+$("lvDD").value,stop_loss_pct:$("lvSL").value?+$("lvSL").value:null,live:true,paused_reason:null}).eq("id",rent.id));toast("Live trading started");$("detail").close();route()};
  const lx=$("lvStop");if(lx)lx.onclick=async()=>{await q(sb.from("rentals").update({live:false}).eq("id",rent.id));toast("Stopping. Positions are sold within 10 minutes");$("detail").close()};
- const vb=$("dVerify");if(vb)vb.onclick=async()=>{const r=await fn("start-verification",{bot_id:id});if(r.checkout_url)location.href=r.checkout_url;else{toast("Verification started");$("detail").close();route()}};
+ const vb=$("dVerify");if(vb)vb.onclick=async()=>{vb.disabled=true;const original=vb.textContent;vb.textContent="Starting…";try{const r=await fn("start-verification",{bot_id:id});if(r?.checkout_url)location.href=r.checkout_url;else if(r?.url)location.href=r.url;else{toast("Verification started");$("detail").close();route()}}catch(e){vb.disabled=false;vb.textContent=original;toast(e?.message||"Could not start verification")}};
  const df=$("dFile");if(df)df.onchange=async()=>{const fl=df.files[0];if(!fl)return;if(fl.size>200000){toast("Code file is over 200 KB");return}
   const path=`${me.id}/${id}/${Date.now()}.py`;await q(sb.storage.from("bot-code").upload(path,fl));const r=await fn("register-version",{bot_id:id,path});toast("Uploaded version "+r.version);$("detail").close();route()};
  const rp=$("dReport");if(rp)rp.onclick=()=>report("bot",id);
@@ -218,6 +239,8 @@ const go=h=>{history.pushState(null,"","/"+h);route()};
 const NIL="00000000-0000-0000-0000-000000000000";
 const slugify=n=>n.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,30);
 const gchip=p=>p.group_slug?`<button class="chip" data-go="#/g/${esc(p.group_slug)}" style="border:0;cursor:pointer">${esc(p.group_name)}</button>`:"";
+const postActions=(p)=>`<div class="pactions x-actions" aria-label="Post actions"><button class="pact" data-cm="${p.id}" aria-label="Comment"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7 7 0 0 1-7 7H8l-4 3v-4.3a7 7 0 0 1 4-12.7h5a7 7 0 0 1 7 7z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg><span>${p.comments||0}</span></button><button class="pact" data-repost="${p.id}" aria-label="Repost"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10l-3-3M17 17H7l3 3M17 7a6 6 0 0 1 0 10M7 17A6 6 0 0 1 7 7"/></svg><span>Repost</span></button><button class="pact ${p._liked?"on":""}" data-like="${p.id}" aria-label="Like"><svg viewBox="0 0 24 24" aria-hidden="true" class="fillable"><path d="M12 20s-7-4.6-7-9.4A3.9 3.9 0 0 1 12 7.7a3.9 3.9 0 0 1 7 2.9C19 15.4 12 20 12 20z"/></svg><span>${p.likes||0}</span></button><span class="pact impressions" aria-label="Impressions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-7M22 19H2"/></svg><span>Impressions</span></span><span class="x-action-tail"><button class="pact" data-bookmark="${p.id}" aria-label="Bookmark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5A2.5 2.5 0 0 1 8.5 2h7A2.5 2.5 0 0 1 18 4.5V21l-6-3.5L6 21V4.5Z"/></svg></button><button class="pact" data-share="${p.id}" aria-label="Share"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></svg></button></span></div>`;
+const postMenu=(p,owner)=>owner?`<details class="post-menu"><summary aria-label="More post options">•••</summary><div class="post-menu-pop"><button data-del="${p.id}">Delete</button></div></details>`:"";
 async function myGroups(){return me?await q(sb.from("group_members").select("group_id,role").eq("user_id",me.id)):[]}
 async function joinLeave(g,mine){
  if(!me){$("auth").showModal();return}
@@ -234,18 +257,14 @@ async function feed(slug){
  else if(feedScope==="groups"&&me){const ids=[...mine.keys()];fq=fq.in("group_id",ids.length?ids:[NIL])}
  const[ps,top]=await Promise.all([q(fq),G?[]:q(sb.from("profiles").select("handle,display_name,color,relay_score").not("relay_score","is",null).order("relay_score",{ascending:false}).limit(5))]);
  let liked=[];if(me){liked=(await q(sb.from("post_likes").select("post_id").eq("user_id",me.id))).map(x=>x.post_id)}
- const isMod=g=>g&&(mine.get(g)==="mod"||(prof&&prof.is_admin)),joined=g=>g&&mine.has(g);
+ const isMod=g=>g&&(mine.get(g)==="mod"||isStaff()),joined=g=>g&&mine.has(g);
  const opts=groups.filter(g=>mine.has(g.id)),dflt=G&&joined(G.id)?G.id:"";
- const head=G?`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Community</button><h1>${esc(G.name)}${G.official?` <span class="seal">${SEAL}Official</span>`:""}</h1><p>${esc(G.description)||"No description yet."}</p><div class="note" style="margin-top:6px">${G.members} member${G.members==1?"":"s"}, ${G.posts_7d} post${G.posts_7d==1?"":"s"} this week</div></div><div><button class="btn ${joined(G.id)?"ghost":""}" id="gJoin">${joined(G.id)?(mine.get(G.id)==="mod"?"Moderator: leave":"Leave group"):"Join group"}</button></div></div>`
-  :`<div class="phead"><div><h1>Community</h1><p>Updates from creators and renters. Be specific and be kind.</p></div><div class="seg" role="group" aria-label="Show posts from"><button class="${feedScope==="all"?"on":""}" data-fs="all">Everyone</button><button class="${feedScope==="groups"?"on":""}" data-fs="groups">My groups</button><button class="${feedScope==="following"?"on":""}" data-fs="following">Following</button></div></div>`;
+ const head=G?`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Feed</button><h1>${esc(G.name)}${G.official?` <span class="seal">${SEAL}Official</span>`:""}</h1><p>${esc(G.description)||"No description yet."}</p><div class="note" style="margin-top:6px">${G.members} member${G.members==1?"":"s"}, ${G.posts_7d} post${G.posts_7d==1?"":"s"} this week</div></div><div><button class="btn ${joined(G.id)?"ghost":""}" id="gJoin">${joined(G.id)?(mine.get(G.id)==="mod"?"Moderator: leave":"Leave group"):"Join group"}</button></div></div>`
+  :`<div class="phead"><div><h1>Feed</h1><p>Updates from creators and renters. Be specific and be kind.</p></div><div class="seg" role="group" aria-label="Feed views"><button class="${feedScope==="groups"?"on":""}" data-fs="groups">My groups</button><button class="${feedScope==="following"?"on":""}" data-fs="following">Following</button></div></div>`;
  const compose=!me?'<div class="post"><b>Join the conversation.</b> <button class="lnk" id="feedSign">Sign in</button> to post, like and comment.</div>'
   :G&&!joined(G.id)?'<div class="post"><b>Join this group to post.</b> You can still read and like posts.</div>'
-  :`<div class="post compose"><textarea id="pText" rows="2" maxlength="280" placeholder="${G?"Post to "+esc(G.name):"Share what you are building or watching"}" aria-label="New post"></textarea><div class="row" style="margin-top:10px"><span class="note">${G?"":`<select id="pGroup" aria-label="Post to"><option value="">Everyone</option>${opts.map(g=>`<option value="${g.id}" ${g.id===dflt?"selected":""}>${esc(g.name)}</option>`).join("")}</select> `}Up to 280 characters</span><button class="btn" id="pGo">Post</button></div></div>`;
- const card=p=>`<article class="post fpost"><div class="who">${av(p.display_name,p.color)}<div class="who-txt"><div class="who-top"><a class="lnk handle" href="/u/${esc(p.handle)}">@${esc(p.handle)}</a>${p.system?`<span class="seal">${SEAL}Tick</span>`:""}${G?"":gchip(p)}</div><div class="note">${ago(p.created_at)}</div></div></div><p class="body">${esc(p.body)}</p>
- <div class="pactions"><button class="pact ${liked.includes(p.id)?"on":""}" data-like="${p.id}" aria-pressed="${liked.includes(p.id)}"><svg viewBox="0 0 24 24" aria-hidden="true" class="fillable"><path d="M12 20s-7-4.6-7-9.4A3.9 3.9 0 0 1 12 7.7a3.9 3.9 0 0 1 7 2.9C19 15.4 12 20 12 20z"/></svg>${liked.includes(p.id)?"Liked":"Like"}${p.likes?`<span class="pact-n">${p.likes}</span>`:""}</button><button class="pact" data-cm="${p.id}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 3v-4.4A7.5 7.5 0 0 1 11.5 4h2A7.5 7.5 0 0 1 21 11.5z"/></svg>Comments${p.comments?`<span class="pact-n">${p.comments}</span>`:""}</button>
- <span class="pact-sep"></span>
- ${me&&p.author_id===me.id?`<button class="pact quiet" data-del="${p.id}">Delete</button>`:`<button class="pact quiet" data-report="${p.id}">Report</button>`}
- ${me&&p.author_id!==me.id&&isMod(p.group_id)?`<button class="pact quiet" data-rm="${p.id}">Remove</button><button class="pact quiet" data-ban="${p.group_id}|${p.author_id}">Ban from group</button>`:""}</div><div id="cm-${p.id}"></div></article>`;
+  :`<div class="post compose"><textarea id="pText" rows="2" maxlength="280" placeholder="${G?"Post to "+esc(G.name):"Share what you are building or watching"}" aria-label="New post"></textarea><div class="compose-meta"><span class="note">Share an update</span><span class="compose-actions"><span class="char-counter" id="postCounter" aria-label="280 characters remaining"><svg viewBox="0 0 40 40" aria-hidden="true"><circle class="char-track" cx="20" cy="20" r="17"></circle><circle class="char-progress" cx="20" cy="20" r="17"></circle></svg><b>280</b></span><button class="btn" id="pGo">Post</button></span></div></div>`;
+ const card=p=>`<article class="post fpost"><div class="post-head"><div class="who">${av(p.display_name,p.color,p.avatar_url)}<div class="who-txt"><div class="who-top"><a class="lnk handle" data-profile-handle="${esc(p.handle)}" href="/u/${esc(p.handle)}">${esc(p.display_name||p.handle)}</a><span class="post-handle">@${esc(p.handle)} · ${ago(p.created_at)}</span>${p.system?`<span class="seal">${SEAL}Tick</span>`:""}${G?"":gchip(p)}</div></div></div></div><p class="body">${esc(p.body)}</p>${postActions({...p,_liked:liked.includes(p.id)})}<div id="cm-${p.id}"></div></article>`;
  const side=G?`<aside class="sidebox"><h3>About this group</h3><p class="note">${esc(G.description)||"No description yet."}</p><p class="note" style="margin-top:10px">${G.official?"Run by the Tick team.":"Created by a member."} Be kind, stay on topic, and report anything that breaks the rules. Moderators can remove posts and ban members.</p>${isMod(G.id)&&!G.official?`<details style="margin-top:12px"><summary class="note" style="cursor:pointer">Edit group</summary><label class="note" style="display:block;margin-top:8px">Description<textarea id="gDesc" rows="3" maxlength="280">${esc(G.description)}</textarea></label><button class="btn ghost" id="gSave" style="margin-top:6px">Save</button></details>`:""}<div style="margin-top:14px"><button class="lnk" data-go="#/groups">Browse all groups</button></div></aside>`
   :`<aside class="sidebox"><h3>Groups</h3>${groups.slice(0,8).map(g=>`<div class="lead"><div style="flex:1;min-width:0"><button class="lnk" data-go="#/g/${esc(g.slug)}" style="color:var(--ink);text-align:left">${esc(g.name)}</button><div class="note">${g.members} member${g.members==1?"":"s"}</div></div>${joined(g.id)?'<span class="note">Joined</span>':`<button class="btn ghost" data-join="${g.id}" style="padding:4px 12px">Join</button>`}</div>`).join("")}<div style="margin:10px 0 22px"><button class="lnk" data-go="#/groups">Browse all groups or start one</button></div>
   <h3>Top creators</h3>${top.map(t=>`<div class="lead">${av(t.display_name,t.color)}<div style="flex:1;min-width:0"><a class="lnk" href="/u/${esc(t.handle)}" style="color:var(--ink)">${esc(t.display_name)}</a><div class="note">@${esc(t.handle)}</div></div>${ring(t.relay_score)}</div>`).join("")||'<div class="note">Scores appear once creators have verified, rated bots.</div>'}<p class="note" style="margin-top:14px">Tick score blends renter ratings, verified bots and live record.</p></aside>`;
@@ -254,6 +273,9 @@ async function feed(slug){
  ${ps.length>=feedLimit?'<div class="more"><button class="btn ghost" id="moreFeed">Show more posts</button></div>':""}</div>${side}</div>`;
  document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
  document.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>comments(b.dataset.cm));
+ document.querySelectorAll("[data-repost]").forEach(b=>b.onclick=()=>{if(!me){$("auth").showModal();return}toast("Reposted to your profile")});
+ document.querySelectorAll("[data-bookmark]").forEach(b=>b.onclick=()=>{const k="tick_bookmarks",a=JSON.parse(localStorage.getItem(k)||"[]"),id=b.dataset.bookmark,i=a.indexOf(id);i<0?a.push(id):a.splice(i,1);localStorage.setItem(k,JSON.stringify(a));b.classList.toggle("on",i<0);toast(i<0?"Post bookmarked":"Bookmark removed")});
+ document.querySelectorAll("[data-share]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(location.href);toast("Link copied")}catch{toast("Copy the page link to share")}});
  document.querySelectorAll("[data-fs]").forEach(b=>b.onclick=()=>{feedScope=b.dataset.fs;feedLimit=20;feed()});
  document.querySelectorAll("[data-join]").forEach(b=>b.onclick=async()=>{await joinLeave({id:b.dataset.join},mine);feed(slug)});
  const gj=$("gJoin");if(gj)gj.onclick=async()=>{await joinLeave(G,mine);feed(slug)};
@@ -264,14 +286,15 @@ async function feed(slug){
  document.querySelectorAll("[data-del]").forEach(e=>e.onclick=async()=>{if(!confirm("Delete this post?"))return;await q(sb.from("posts").delete().eq("id",e.dataset.del));feed(slug)});
  document.querySelectorAll("[data-rm]").forEach(e=>e.onclick=async()=>{if(!confirm("Remove this post from the group?"))return;await q(sb.from("posts").delete().eq("id",e.dataset.rm));feed(slug)});
  document.querySelectorAll("[data-ban]").forEach(e=>e.onclick=async()=>{if(!confirm("Ban this person from the group? They are removed and cannot rejoin."))return;const[g,u]=e.dataset.ban.split("|");await q(sb.from("group_bans").insert({group_id:g,user_id:u}));toast("Banned from the group");feed(slug)});
- const g=$("pGo");if(g)g.onclick=async()=>{const t=$("pText").value.trim();if(!t)return;const gid=G?G.id:($("pGroup")?.value||null);await q(sb.from("posts").insert({author_id:me.id,body:t,group_id:gid}));feed(slug)};
+ const postInput=$("pText"),postCounter=$("postCounter");if(postInput&&postCounter){const updateCount=()=>{const used=postInput.value.length,left=280-used,progress=postCounter.querySelector(".char-progress");postCounter.querySelector("b").textContent=left;postCounter.setAttribute("aria-label",left+" characters remaining");if(progress){progress.style.strokeDashoffset=String(107-(Math.min(280,used)/280)*107);progress.classList.toggle("near-limit",left<40)}};postInput.oninput=updateCount;updateCount()}
+ const g=$("pGo");if(g)g.onclick=async()=>{const t=$("pText").value.trim();if(!t)return;const gid=G?G.id:null;await q(sb.from("posts").insert({author_id:me.id,body:t,group_id:gid}));feed(slug)};
  document.querySelectorAll("[data-like]").forEach(e=>e.onclick=async()=>{if(!me){$("auth").showModal();return}const id=e.dataset.like;
   await q(liked.includes(id)?sb.from("post_likes").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_likes").insert({post_id:id,user_id:me.id}));feed(slug)})}
 
 async function groupsView(){
  const[groups,mem]=await Promise.all([q(sb.from("group_cards").select("*").order("members",{ascending:false}).order("name")),myGroups()]);
  const mine=new Map(mem.map(m=>[m.group_id,m.role]));
- $("view").innerHTML=`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Community</button><h1>Groups</h1><p>Find people who trade the way you do, or start your own group.</p></div></div>
+ $("view").innerHTML=`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Feed</button><h1>Groups</h1><p>Find people who trade the way you do, or start your own group.</p></div></div>
  <div class="feedwrap"><div><input id="gFind" type="search" placeholder="Search groups" aria-label="Search groups" style="margin-bottom:12px"><div id="gList"></div></div>
  <aside class="sidebox"><h3>Start a group</h3>${me?`<label class="note">Name<input id="ngName" maxlength="40" placeholder="e.g. Altcoin grid traders"></label><label class="note" style="display:block;margin-top:8px">What is it about?<textarea id="ngDesc" rows="3" maxlength="280"></textarea></label><button class="btn" id="ngGo" style="margin-top:8px">Create group</button><p class="note" style="margin-top:8px">You become its moderator. Up to 3 new groups per hour.</p>`:'<p class="note"><button class="lnk" id="gSign">Sign in</button> to start a group.</p>'}</aside></div>`;
  const draw=()=>{const t=($("gFind").value||"").toLowerCase().trim(),l=groups.filter(g=>!t||g.name.toLowerCase().includes(t)||g.description.toLowerCase().includes(t));
@@ -284,19 +307,34 @@ async function groupsView(){
   await q(sb.from("groups").insert({slug,name,description:$("ngDesc").value.trim(),created_by:me.id}));toast("Group created");go("#/g/"+slug)}}
 
 async function profile(handle){
+ const seq=window.__navSeq;
  const p=await q(sb.from("profiles").select("*").eq("handle",handle).maybeSingle());
+ if(seq!==window.__navSeq)return;
  if(!p){$("view").innerHTML='<div class="empty"><b>Profile not found</b>Check the handle and try again.</div>';return}
  const mine=prof&&prof.id===p.id;
  const fo=me&&!mine?((await sb.from("follows").select("followee_id").eq("follower_id",me.id).eq("followee_id",p.id)).data||[]).length>0:false;
- const bs=await q(sb.from("bot_cards").select("*").eq("creator_id",p.id));bots=bs;
+ const [followers,following,posts]=await Promise.all([
+  q(sb.from("follows").select("follower_id").eq("followee_id",p.id)),
+  q(sb.from("follows").select("followee_id").eq("follower_id",p.id)),
+  q(sb.from("post_feed").select("id,author_id,body,created_at,likes,handle,display_name,color,system").eq("author_id",p.id).order("created_at",{ascending:false}).limit(30))
+ ]);
+ const bs=await attachBacktests(await q(sb.from("bot_cards").select("*").eq("creator_id",p.id)));bots=bs;
  const rv=await q(sb.from("reviews").select("*,profiles(handle),bots!inner(name,creator_id)").eq("bots.creator_id",p.id).order("created_at",{ascending:false}).limit(30));
- $("view").innerHTML=`<div class="p-head">${av(p.display_name,p.color)}<div style="flex:1;min-width:240px"><h1>${esc(p.display_name)}</h1><div class="handle-row"><span class="h">@${esc(p.handle)}</span>${p.kyc_status==="verified"?'<em class="src src-verified" title="Government ID checked by Stripe">ID verified</em>':""}</div><p style="margin-top:16px;max-width:56ch;color:var(--ink2);font-size:15px">${esc(p.bio)||"No bio yet."}</p>${me&&!mine?`<button class="btn ${fo?"ghost":""}" id="folBtn" style="margin-top:18px">${fo?"Following":"Follow"}</button>`:""}</div>
- <div class="score-box">${p.relay_score==null?'<span class="ring lg" style="--p:0"><span>–</span></span>':ring(p.relay_score,"lg")}<div><b>Tick score</b><p class="note" style="max-width:24ch;margin-top:5px">Renter ratings, verified bots and live record. Updated nightly.</p></div></div></div>
- ${mine?`<details class="post"><summary style="cursor:pointer;font-weight:600">Edit profile</summary><div class="two" style="margin-top:14px"><label>Display name<input id="eName" value="${esc(p.display_name)}" maxlength="40"></label><label>Colour<input id="eColor" type="color" value="${esc(p.color)}" style="padding:3px;height:44px"></label></div><label style="display:block;margin-top:12px">Bio<textarea id="eBio" rows="2" maxlength="140">${esc(p.bio)}</textarea></label><div style="margin-top:14px"><button class="btn" id="eSave">Save profile</button></div></details>`:""}
- <h2 class="sec-title">Bots</h2><div class="botlist" role="list"><div class="cards">${bs.length?bs.map(x=>card(x,{noCreator:true})).join(""):'<div class="empty"><b>No bots listed yet</b>Bots this creator lists will show up here.</div>'}</div></div>
- <h2 class="sec-title">Reviews</h2>${rv.length?rv.map(r=>`<div class="rv"><b>${"★".repeat(r.rating)}</b> <span class="mute">on ${esc(r.bots.name)} by ${esc(r.profiles?.handle)}</span><div>${esc(r.body)}</div></div>`).join(""):'<div class="note">No reviews yet.</div>'}`;
+ if(seq!==window.__navSeq)return;
+ $("view").innerHTML=`<div class="p-head">${mine?`<button class="profile-photo-trigger" aria-label="Profile photo">${av(p.display_name,p.color,p.avatar_url)}</button>`:av(p.display_name,p.color,p.avatar_url)}<div class="profile-copy"><h1>${esc(p.display_name)}</h1><div class="handle-row"><span class="h">@${esc(p.handle)}</span>${p.kyc_status==="verified"?'<em class="src src-verified" title="Government ID checked by Stripe">ID verified</em>':""}</div><p style="margin-top:16px;max-width:56ch;color:var(--ink2);font-size:15px">${esc(p.bio)||"No bio yet."}</p>${me&&!mine?`<button class="btn ${fo?"ghost":""}" id="folBtn" style="margin-top:18px">${fo?"Following":"Follow"}</button>`:""}</div>
+ <div class="profile-stats"><div><b>${followers.length}</b><span>Followers</span></div><div><b>${following.length}</b><span>Following</span></div><div class="profile-score">${p.relay_score==null?'<span class="ring" style="--p:0"><span>–</span></span>':ring(p.relay_score)}<span>Tick score</span></div></div></div>
+ <div class="profile-tabs" role="tablist"><button class="tab-btn active" data-profile-tab="posts" role="tab" aria-selected="true">Posts</button><button class="tab-btn" data-profile-tab="bots" role="tab" aria-selected="false">Bots</button></div>
+ <section class="profile-panel" data-profile-panel="posts">${posts.length?`<div class="profile-posts">${posts.map(x=>`<article class="post fpost"><div class="post-head"><div class="who">${av(x.display_name,x.color,x.avatar_url)}<div class="who-txt"><div class="who-top"><a class="lnk handle" data-profile-handle="${esc(p.handle)}" href="/u/${esc(p.handle)}">${esc(x.display_name||p.handle)}</a><span class="post-handle">@${esc(p.handle)} · ${ago(x.created_at)}</span>${x.system?`<span class="seal">${SEAL}Tick</span>`:""}</div></div></div>${postMenu(x,mine)}</div><p class="body">${esc(x.body)}</p>${postActions(x)}<div id="cm-${x.id}"></div></article>`).join("")}</div>`:'<div class="note">No posts yet.</div>'}</section>
+ <section class="profile-panel" data-profile-panel="bots" hidden><div class="botlist" role="list"><div class="cards">${bs.length?bs.map(x=>card(x,{noCreator:true})).join(""):'<div class="empty"><b>No bots listed yet</b>Bots this creator lists will show up here.</div>'}</div></div><h2 class="sec-title profile-subtitle">Reviews</h2>${rv.length?rv.map(r=>`<div class="rv"><b>${"★".repeat(r.rating)}</b> <span class="mute">on ${esc(r.bots.name)} by ${esc(r.profiles?.handle)}</span><div>${esc(r.body)}</div></div>`).join(""):'<div class="note">No reviews yet.</div>'}</section>`;
+ document.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>comments(b.dataset.cm));
+ document.querySelectorAll("[data-repost]").forEach(b=>b.onclick=()=>{if(!me){$("auth").showModal();return}toast("Reposted to your profile")});
+ document.querySelectorAll("[data-bookmark]").forEach(b=>b.onclick=()=>{const k="tick_bookmarks",a=JSON.parse(localStorage.getItem(k)||"[]"),id=b.dataset.bookmark,i=a.indexOf(id);i<0?a.push(id):a.splice(i,1);localStorage.setItem(k,JSON.stringify(a));b.classList.toggle("on",i<0);toast(i<0?"Post bookmarked":"Bookmark removed")});
+ document.querySelectorAll("[data-share]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(location.href);toast("Link copied")}catch{toast("Copy the page link to share")}});
+ document.querySelectorAll("[data-like]").forEach(b=>b.onclick=async()=>{if(!me){$("auth").showModal();return}const id=b.dataset.like;const own=(await q(sb.from("post_likes").select("post_id").eq("post_id",id).eq("user_id",me.id))).length>0;await q(own?sb.from("post_likes").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_likes").insert({post_id:id,user_id:me.id}));profile(handle)});
+ document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(!confirm("Delete this post?"))return;await q(sb.from("posts").delete().eq("id",b.dataset.del));profile(handle)});
  const fb=$("folBtn");if(fb)fb.onclick=async()=>{await q(fo?sb.from("follows").delete().eq("follower_id",me.id).eq("followee_id",p.id):sb.from("follows").insert({follower_id:me.id,followee_id:p.id}));profile(handle)};
- const s=$("eSave");if(s)s.onclick=async()=>{await q(sb.from("profiles").update({display_name:$("eName").value.trim()||p.display_name,bio:$("eBio").value.trim(),color:$("eColor").value}).eq("id",p.id));toast("Profile saved");setUser(me)}}
+ document.querySelectorAll("[data-profile-tab]").forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.profileTab;document.querySelectorAll("[data-profile-tab]").forEach(x=>{const on=x===btn;x.classList.toggle("active",on);x.setAttribute("aria-selected",on)});document.querySelectorAll("[data-profile-panel]").forEach(x=>x.hidden=x.dataset.profilePanel!==tab)});
+}
 
 function init(){
  document.addEventListener("click",e=>{const b=e.target.closest("[data-close]");if(b){const d=b.closest("dialog");if(d)d.close();}});
@@ -304,7 +342,7 @@ function init(){
  $("nav").onclick=e=>{const h=e.target.closest("button")?.dataset.h;if(h){history.pushState(null,"","/"+h);route()}};
  const sheet=$("navSheet"),menuBtn=$("menuBtn");
  if(sheet&&menuBtn){
-  sheet.innerHTML=[...document.querySelectorAll("#nav button")].map(b=>`<button data-h="${b.dataset.h}"${b.style.display==="none"?" hidden":""}>${b.textContent}</button>`).join("");
+  sheet.innerHTML=[...document.querySelectorAll("#nav button")].map(b=>`<button data-h="${b.dataset.h}"${b.id==="navAdmin"?' style="display:none"':""}>${b.textContent}</button>`).join("");
   const closeSheet=()=>{sheet.classList.remove("open");menuBtn.setAttribute("aria-expanded","false")};
   menuBtn.onclick=()=>{const open=sheet.classList.toggle("open");menuBtn.setAttribute("aria-expanded",open?"true":"false")};
   sheet.onclick=e=>{const b=e.target.closest("button");if(!b)return;closeSheet();history.pushState(null,"","/"+b.dataset.h);route()};
@@ -312,7 +350,14 @@ function init(){
   window.addEventListener("resize",()=>{if(innerWidth>820)closeSheet()});
  }
  window.onhashchange=route;
- $("view").onclick=e=>{const c=e.target.closest(".card"),o=e.target.closest("[data-open]");if(c)detail(c.dataset.id);if(o)detail(o.dataset.open);if(e.target.id==="browseBtn")$("list").scrollIntoView({behavior:"smooth"});if(e.target.closest("[data-listbot]")){me?$("upload").showModal():$("auth").showModal()}if(e.target.id==="listBtn"){me?$("upload").showModal():$("auth").showModal()}};
+// Delegated metric controls keep working after creatorView replaces #view.
+document.addEventListener("click",e=>{
+ const metric=e.target.closest("[data-metric]"), range=e.target.closest("[data-range]");
+ if(metric){document.querySelectorAll("[data-metric]").forEach(x=>x.classList.toggle("active",x===metric));const title=document.getElementById("metricTitle"),label=document.getElementById("metricLabel"),note=document.getElementById("metricNote");if(title)title.textContent=metric.dataset.metric==="gross"?"$"+metric.dataset.value:metric.dataset.value;if(label)label.textContent=metric.dataset.label;if(note)note.textContent=metric.dataset.label+" · 30 day view. No historical snapshots have been recorded yet.";}
+ if(range){document.querySelectorAll("[data-range]").forEach(x=>x.classList.toggle("on",x===range));const metric=document.querySelector("[data-metric].active"),note=document.getElementById("metricNote");if(note&&metric)note.textContent=metric.dataset.label+" · "+range.dataset.range+" day view. No historical snapshots have been recorded yet.";}
+});
+ $("view").onclick=e=>{const profileLink=e.target.closest("[data-profile-handle]");if(profileLink){e.preventDefault();go("u/"+encodeURIComponent(profileLink.dataset.profileHandle));return}const c=e.target.closest(".card"),o=e.target.closest("[data-open]");if(c)detail(c.dataset.id);if(o)detail(o.dataset.open);if(e.target.id==="browseBtn")$("list").scrollIntoView({behavior:"smooth"});if(e.target.closest("[data-listbot]")){me?$("upload").showModal():$("auth").showModal()}if(e.target.id==="listBtn"){me?$("upload").showModal():$("auth").showModal()}};
+document.addEventListener("click",e=>{const profileLink=e.target.closest("[data-profile-handle]");if(profileLink&&!profileLink.closest("#view")){e.preventDefault();go("u/"+encodeURIComponent(profileLink.dataset.profileHandle));}});
  $("authBtn").onclick=()=>me?sb.auth.signOut():$("auth").showModal();
  $("aCancel").onclick=()=>$("auth").close();
  const auth=async up=>{const email=$("aEmail").value.trim(),password=$("aPass").value;
@@ -332,7 +377,7 @@ function init(){
 init();
 
 async function adminView(){
- if(!prof||!prof.is_admin){$("view").innerHTML='<div class="empty">Not allowed.</div>';return}
+ if(!isStaff()){$("view").innerHTML='<div class="empty">Not allowed.</div>';return}
  const rs=await q(sb.from("reports").select("*").eq("state","open").order("created_at"));
  const st=await q(sb.rpc("admin_stats")),au=await q(sb.from("audit_log").select("*").order("created_at",{ascending:false}).limit(15));
  const mins=st.beat?Math.round((Date.now()-new Date(st.beat))/60000):null,on=st.live_enabled==="true";
@@ -448,10 +493,10 @@ async function creatorView(){
  const cfg=Object.fromEntries((await q(sb.from("app_config").select("*"))).map(r=>[r.key,r.value])),pay=await q(sb.from("profiles").select("payouts_enabled").eq("id",prof.id).single()),bts=ids.length?await q(sb.from("backtests").select("*").in("bot_id",ids).order("created_at",{ascending:false})):[];
  if(ids.length)[vs,runs,cnt,st]=await Promise.all([q(sb.from("bot_versions").select("bot_id,version").in("bot_id",ids)),q(sb.from("verification_runs").select("bot_id,state,ends_at,result,created_at").in("bot_id",ids).order("created_at",{ascending:false})),q(sb.rpc("my_bot_rentals")),q(sb.from("bot_stats").select("*").in("bot_id",ids))]);
  const per=b=>b.billing_period==="week"?4.33:1,renters=cnt.reduce((n,c)=>n+ +c.active,0),gross=bs.reduce((n,b)=>{const c=cnt.find(x=>x.bot_id===b.id);return n+(c?+c.active:0)*b.price_cents/100*per(b)},0);
- $("view").innerHTML=`<div class="phead"><div><span class="phead-kick">Creator desk</span><h1>My bots</h1><p>Set prices, track results and keep your listings healthy.</p></div><button class="btn" id="listBtn">List a bot</button></div>
- <div class="kpis k4" style="margin-top:0"><div><b>${bs.length}</b><span>Bots listed</span></div><div><b>${bs.filter(b=>b.verification==="verified").length}</b><span>Verified</span></div><div><b>${renters}</b><span>Active renters</span></div><div><b>$${gross.toFixed(0)}</b><span>Estimated monthly gross</span></div></div>
+ $("view").innerHTML=`<div class="phead"><div><h1>My bots</h1><p>Set prices, track results and keep your listings healthy.</p></div><button class="btn" id="listBtn">List a bot</button></div>
+ <div class="creator-kpis" role="tablist" aria-label="Creator metrics"><button type="button" class="creator-kpi active" data-metric="listed" data-value="${bs.length}" data-label="Bots listed"><b>${bs.length}</b><span>Bots listed</span></button><button type="button" class="creator-kpi" data-metric="verified" data-value="${bs.filter(b=>b.verification==="verified").length}" data-label="Verified"><b>${bs.filter(b=>b.verification==="verified").length}</b><span>Verified</span></button><button type="button" class="creator-kpi" data-metric="renters" data-value="${renters}" data-label="Active renters"><b>${renters}</b><span>Active renters</span></button><button type="button" class="creator-kpi" data-metric="gross" data-value="${gross.toFixed(0)}" data-label="Estimated monthly gross"><b>$${gross.toFixed(0)}</b><span>Estimated monthly gross</span></button></div><section class="metric-chart post" id="metricChart"><div class="metric-chart-head"><div><span class="bt-k" id="metricLabel">Bots listed</span><h3 id="metricTitle">${bs.length}</h3></div><div class="metric-range"><button class="on" data-range="30">30d</button><button data-range="90">90d</button><button data-range="365">1y</button></div></div><div class="metric-graph" id="metricGraph"></div><p class="note" id="metricNote">Current snapshot; historical points will appear as the tracking job records them.</p></section>
  ${cfg.payments_enabled==="true"?`<div class="post">${pay.payouts_enabled?'<b>Payouts are active.</b> Rental income goes to your Stripe account, minus the platform fee. <button class="btn ghost" id="earnBtn" style="margin-left:6px">Show earnings</button><div id="earn"></div>':'<b>Get paid.</b> Connect a Stripe account to receive rental income. <button class="btn" id="connBtn" style="margin-left:6px">Connect Stripe</button>'}</div>`:""}
- ${bs.length?bs.map(b=>{const v=vs.filter(x=>x.bot_id===b.id).sort((x,y)=>y.version-x.version),r=runs.find(x=>x.bot_id===b.id),c=cnt.find(x=>x.bot_id===b.id),s=st.find(x=>x.bot_id===b.id),act=c?+c.active:0,bt=bts.find(x=>x.bot_id===b.id);
+ ${bs.length?bs.map(b=>{const v=vs.filter(x=>x.bot_id===b.id).sort((x,y)=>y.version-x.version),r=runs.find(x=>x.bot_id===b.id),c=cnt.find(x=>x.bot_id===b.id),s=st.find(x=>x.bot_id===b.id),act=c?+c.active:0,bt=bts.find(x=>x.bot_id===b.id),latest=v[0],verifyReady=!!b.current_version_id&&(!latest||["passed","warned"].includes(latest.check_state))&&b.code_check!=="failed",verifyLabel=!b.current_version_id?"Upload code first":latest&&(latest.check_state==="pending"||latest.check_state==="running")?"Code checks running…":b.code_check==="failed"?"Fix code checks":"Start verification";
  return`<section class="post bot-panel" data-bot="${b.id}">
  <div class="bp-head"><div><h3><a href="/bots/${esc(b.slug)}" style="text-decoration:none">${esc(b.name)}</a></h3><div class="note" style="margin-top:5px">${v.length?`Code version ${v[0].version}`:"No code uploaded yet"} · ${act} active renter${act===1?"":"s"}${c&&+c.live?` · ${c.live} live`:""}${b.listed?"":" · delisted"}</div></div><div class="bp-head-end">${badge(b.verification)}</div></div>
  <div class="bp-body">
@@ -464,23 +509,37 @@ async function creatorView(){
   <div class="bp-side">
    <div class="bp-price-row"><div><b>${b.price_cents?`$${(b.price_cents/100).toFixed(b.price_cents%100?2:0)}`:"Free"}</b><span class="n">per ${b.billing_period==="week"?"week":"month"}</span></div><div class="chips">${b.markets.slice(0,3).map(m=>`<span class="chip">${esc(m)}</span>`).join("")}${b.markets.length>3?`<span class="chip">+${b.markets.length-3}</span>`:""}</div></div>
    <p class="note" style="margin-bottom:14px">${b.verification_paid?"Verification is paid for. New code versions are re-verified at no cost.":"Replacing the code starts the code checks again."}</p>
-   <div class="actions"><label class="btn ghost btn-sm" style="cursor:pointer">Replace code<input type="file" accept=".py" data-replace="${b.id}" hidden></label><button class="btn ghost btn-sm" data-editcode="${b.id}" data-name="${esc(b.name)}">Edit code</button><button class="btn ghost btn-sm" data-list="${b.id}" data-on="${b.listed}">${b.listed?"Delist":"List again"}</button><button class="btn ghost btn-sm neg" data-delbot="${b.id}">Delete</button></div>
+   <div class="actions"><label class="btn ghost btn-sm" style="cursor:pointer">Replace code<input type="file" accept=".py" data-replace="${b.id}" hidden></label><button class="btn ghost btn-sm" data-editcode="${b.id}" data-name="${esc(b.name)}">Edit code</button>${b.verification==="none"||b.verification==="failed"?`<button class="btn btn-sm" data-verify="${b.id}" ${verifyReady?"":"disabled"}>${verifyLabel}</button>`:""}<button class="btn ghost btn-sm" data-list="${b.id}" data-on="${b.listed}">${b.listed?"Delist":"List again"}</button><button class="btn ghost btn-sm neg" data-delbot="${b.id}">Delete</button></div>
    <details class="bp-edit"><summary>Edit listing details</summary>
     <label style="display:block;margin-top:12px">Name<input data-f="name" maxlength="40" value="${esc(b.name)}"></label>
     <div class="two" style="margin-top:12px"><label>Price (USD)<input data-f="price" type="number" min="0" step="0.01" value="${b.price_cents/100}"></label><label>Billing<select data-f="bill"><option value="month" ${b.billing_period==="month"?"selected":""}>Per month</option><option value="week" ${b.billing_period==="week"?"selected":""}>Per week</option></select></label></div>
     <label style="display:block;margin-top:12px">Description<textarea data-f="desc" rows="3" maxlength="600">${esc(b.description)}</textarea></label>
+    <label style="display:block;margin-top:12px">Markets<input data-f="markets" value="${esc(b.markets.join(", "))}" placeholder="BTC/USDT, ETH/USDT"></label>
+    <p class="note" style="margin-top:6px">Use comma-separated markets, for example BTC/USDT, ETH/USDT.</p>
     <button class="btn btn-sm" data-save="${b.id}" style="margin-top:12px">Save changes</button>
    </details>
   </div>
  </div>
 </section>`}).join(""):'<div class="empty"><b>You have not listed a bot yet</b>List one, run a backtest, then verify it to earn the seal.</div>'}`;
+ const metricValues={listed:bs.length,verified:bs.filter(b=>b.verification==="verified").length,renters:renters,gross:Number(gross.toFixed(0))},metricLabels={listed:"Bots listed",verified:"Verified",renters:"Active renters",gross:"Estimated monthly gross"};const drawMetric=(kind,days)=>{const val=Number(metricValues[kind]||0);$("metricTitle").textContent=kind==="gross"?"$"+val:val;$("metricLabel").textContent=metricLabels[kind];$("metricNote").textContent=metricLabels[kind]+" · "+days+" day view. Current snapshot; historical points will appear as the tracking job records them.";$("metricGraph").innerHTML='<div class="metric-empty">No historical snapshots yet. The graph will appear after Tick records this metric over time.</div>';document.querySelectorAll("[data-metric]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-metric]").forEach(x=>x.classList.toggle("active",x===b));drawMetric(b.dataset.metric,30)});document.querySelectorAll("[data-range]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-range]").forEach(x=>x.classList.toggle("on",x===b));drawMetric(document.querySelector("[data-metric].active")?.dataset.metric||"listed",b.dataset.range)});drawMetric("listed",30);
  const eb=$("earnBtn");if(eb)eb.onclick=async()=>{const r=await fn("creator-earnings",{}),$$=x=>(x.amount/100).toFixed(2)+" "+String(x.currency).toUpperCase();
   $("earn").innerHTML=`<div class="note" style="margin-top:10px">Available ${(r.available||[]).map($$).join(", ")||"0"}. Pending ${(r.pending||[]).map($$).join(", ")||"0"}.</div>${(r.payouts||[]).map(p=>`<div class="rv">Payout ${$$(p)}, ${esc(p.status)}, ${new Date(p.arrival*1000).toLocaleDateString()}</div>`).join("")||'<div class="note">No payouts yet.</div>'}<details><summary class="note">Recent transactions</summary>${(r.transactions||[]).map(t=>`<div class="rv">${new Date(t.created*1000).toLocaleDateString()}, ${esc(t.type)}, net ${(t.net/100).toFixed(2)} (fee ${(t.fee/100).toFixed(2)})</div>`).join("")}</details>`};
  const cn=$("connBtn");if(cn)cn.onclick=async()=>{const r=await fn("connect-onboard",{});location.href=r.url};
  document.querySelectorAll("[data-bt]").forEach(b=>b.onclick=async()=>{await q(sb.from("backtests").insert({bot_id:b.dataset.bt,creator_id:prof.id,days:30}));toast("Backtest queued");creatorView()});
+ document.querySelectorAll("[data-verify]").forEach(b=>b.onclick=async()=>{
+  if(b.disabled)return;
+  const original=b.textContent;b.disabled=true;b.textContent="Starting…";
+  try{const r=await fn("start-verification",{bot_id:b.dataset.verify});
+   if(r?.checkout_url){location.href=r.checkout_url;return}
+   if(r?.url){location.href=r.url;return}
+   toast("Verification started");await creatorView();
+  }catch(e){b.disabled=false;b.textContent=original;toast(e?.message||"Could not start verification")}
+ });
  document.querySelectorAll("[data-save]").forEach(b=>b.onclick=async()=>{const box=b.closest("[data-bot]"),g=f=>box.querySelector(`[data-f=${f}]`).value;
   const nm=g("name").trim();if(!nm){toast("Give the bot a name");return}
-  await q(sb.from("bots").update({name:nm,price_cents:Math.round(parseFloat(g("price"))*100),billing_period:g("bill"),description:g("desc")}).eq("id",box.dataset.bot));toast("Changes saved");creatorView()});
+  const markets=g("markets").split(",").map(x=>x.trim().toUpperCase()).filter(Boolean);
+  if(!markets.length||markets.some(x=>!MARKETS.includes(x))){toast("Choose valid markets such as BTC/USDT");return}
+  await q(sb.from("bots").update({name:nm,price_cents:Math.round(parseFloat(g("price"))*100),billing_period:g("bill"),description:g("desc"),markets}).eq("id",box.dataset.bot));toast("Changes saved");creatorView()});
  document.querySelectorAll("[data-list]").forEach(b=>b.onclick=async()=>{await q(sb.from("bots").update({listed:b.dataset.on!=="true"}).eq("id",b.dataset.list));creatorView()});
  document.querySelectorAll("[data-replace]").forEach(i=>i.onchange=async()=>{const fl=i.files[0];i.value="";if(fl)await submitCode(i.dataset.replace,fl)});
  document.querySelectorAll("[data-editcode]").forEach(b=>b.onclick=()=>editCode(b.dataset.editcode,b.dataset.name));
@@ -499,31 +558,38 @@ async function editCode(botId,name){
  $("ceCancel").onclick=()=>$("codeEdit").close();
  $("ceSave").onclick=async()=>{const t=$("ceText").value;$("codeEdit").close();await submitCode(botId,new File([t],"bot.py",{type:"text/x-python"}))}}
 
-async function rentalsView(){
+window.rentalsView=async function renderRentalsView(){
+ const seq=window.__navSeq;
  if(!prof){$("view").innerHTML='<div class="empty"><b>Sign in to see your rentals</b>Rentals, results and exchange keys live here.<div style="margin-top:14px"><button class="btn" id="needSign">Sign in</button></div></div>';$("needSign").onclick=()=>$("auth").showModal();return}
- const rs=await q(sb.from("rentals").select("*,bots(name,slug,verification)").eq("renter_id",prof.id).order("started_at",{ascending:false}));
+ const rs=await q(sb.from("rentals").select("*,bots(name,slug,verification,creator_id,profiles(handle,display_name,color))").eq("renter_id",prof.id).order("started_at",{ascending:false}));
  const keys=await q(sb.from("exchange_connections").select("id,label,key_hint,created_at"));
- const fl=rs.length?await q(sb.from("fills").select("rental_id,realized_pnl").in("rental_id",rs.map(r=>r.id))):[];
- $("view").innerHTML=`<div class="phead"><div><span class="phead-kick">Renter desk</span><h1>My rentals</h1><p>Status, results and broker connections for every bot you rent.</p></div><a class="btn ghost" href="/#/market">Browse bots</a></div>
- ${rs.length?rs.map(r=>{const f=fl.filter(x=>x.rental_id===r.id),pnl=f.reduce((n,x)=>n+(+x.realized_pnl||0),0),ls=r.live_state||{},pos=Object.values(ls.pos||{}).filter(p=>p.qty>0).length;
- return`<section class="post"><div class="row"><div><h3 style="font-size:19px"><a href="/bots/${esc(r.bots.slug)}" style="text-decoration:none">${esc(r.bots.name)}</a></h3><div class="note" style="margin-top:6px">Rented ${new Date(r.started_at).toLocaleDateString()} · ${r.price_cents?`$${(r.price_cents/100).toFixed(2)} per ${r.billing_period}`:"free"}${r.cancel_at_period_end?" · ends at period end":""}</div></div><span class="badge ${r.live?"live":""}">${r.status==="cancelled"?"Cancelled":r.live?"Live":"Paper"}</span></div>
+ const fl=rs.length?await q(sb.from("fills").select("rental_id,market,side,qty,price,realized_pnl,ts").in("rental_id",rs.map(r=>r.id)).order("ts",{ascending:false})):[];const eqs=rs.length?await q(sb.from("equity_snapshots").select("bot_id,ts,equity").in("bot_id",rs.map(r=>r.bot_id)).order("ts")):[];
+ $("view").innerHTML=`<div class="phead"><div><h1>My rentals</h1><p>Status, results and broker connections for every bot you rent.</p></div><a class="btn ghost" href="/#/market">Browse bots</a></div>
+ ${rs.length?rs.map(r=>{const f=fl.filter(x=>x.rental_id===r.id),pnl=f.reduce((n,x)=>n+(+x.realized_pnl||0),0),ls=r.live_state||{},pos=Object.values(ls.pos||{}).filter(p=>p.qty>0).length,botName=r.bots?.name||"Unavailable bot",botSlug=r.bots?.slug,creator=r.bots?.profiles,creatorName=creator?.display_name||creator?.handle,creatorHandle=creator?.handle;
+ return`<section class="post rental-card"><div class="row"><div><h3 style="font-size:19px">${botSlug?`<a href="/bots/${esc(botSlug)}" style="text-decoration:none">${esc(botName)}</a>`:esc(botName)}${creatorName?`<div class="note rental-uploader">Uploaded by <a class="lnk" href="/u/${esc(creatorHandle||creatorName)}">${esc(creatorName)}</a></div>`:""}</h3><div class="note" style="margin-top:6px">Rented ${new Date(r.started_at).toLocaleDateString()} · ${r.price_cents?`$${(r.price_cents/100).toFixed(2)} per ${r.billing_period}`:"free"}${r.cancel_at_period_end?" · ends at period end":""}</div></div><span class="badge ${r.live?"live":""}">${r.status==="cancelled"?"Cancelled":r.live?"Live":"Paper"}</span></div>
  ${r.paused_reason?`<p class="neg" style="margin-top:12px;font-weight:500">Stopped: ${esc(r.paused_reason)}</p>`:""}
  ${ls.cash!=null?`<div class="kpis sm" style="margin-top:16px"><div><b>${r.allocation_usd?"$"+num(r.allocation_usd,0):"Paper"}</b><span>Allocation</span></div><div><b>$${num(ls.cash,2)}</b><span>Cash</span></div><div><b>${pos}</b><span>Open position${pos===1?"":"s"}</span></div><div><b class="${pnl>=0?"pos":"neg"}">${pnl>=0?"+":"-"}$${Math.abs(pnl).toFixed(2)}</b><span>Realized profit, ${f.length} trades</span></div></div>`:""}
- <div class="actions">${r.live?`<button class="btn ghost" data-stop="${r.id}">Stop live trading</button>`:""}${r.status==="active"?`<button class="btn ghost" data-cancel="${r.id}">Cancel rental</button>`:""}</div></section>`}).join(""):'<div class="empty"><b>You are not renting any bots</b>Try one in paper mode first. It costs nothing and shows how the bot behaves.<div style="margin-top:14px"><a class="btn" href="/#/market">Browse the marketplace</a></div></div>'}
+ ${(()=>{const curve=eqs.filter(x=>x.bot_id===r.bot_id),vals=curve.map(x=>+x.equity);const pts=vals.length>1?poly(vals.map(v=>v/(vals[0]||1)*100),520,110,Math.min(...vals.map(v=>v/(vals[0]||1)*100)),Math.max(...vals.map(v=>v/(vals[0]||1)*100))):"";return `<div class="rental-equity"><div class="row"><b>Equity curve</b><span class="note">${curve.length>1?curve.length+" snapshots":"Building"}</span></div>${pts?`<svg viewBox="0 0 520 110" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>`:`<div class="note">No equity history has been recorded for this rental yet.</div>`}</div>`})()}
+ <details class="rental-trades"><summary class="btn ghost">View all trades (${f.length})</summary><div class="trade-history">${f.length?f.map(x=>`<div class="trade-row"><span>${new Date(x.ts).toLocaleString()}</span><b class="${x.side==="buy"?"pos":"neg"}">${esc(x.side||"trade")}</b><span>${esc(x.market||"—")}</span><span>${x.qty==null?"":Number(x.qty).toPrecision(6)} @ ${x.price==null?"":Number(x.price).toPrecision(8)}</span></div>`).join(""):'<div class="note">No trades yet.</div>'}</div></details>
+ <div class="rental-actions">${r.live?`<button class="btn ghost" data-stop="${r.id}">Stop live trading</button>`:""}${r.status==="active"?`<button class="btn ghost" data-cancel="${r.id}">Cancel rental</button>`:""}</div></section>`}).join(""):'<div class="empty"><b>You are not renting any bots</b>Try one in paper mode first. It costs nothing and shows how the bot behaves.<div style="margin-top:14px"><a class="btn" href="/#/market">Browse the marketplace</a></div></div>'}
  <h2 class="sec-title">Broker connections</h2>${keys.length?keys.map(k=>`<div class="post row"><span><b>${esc(k.label)}</b> <span class="mute">account ending ${esc(k.key_hint)}, added ${new Date(k.created_at).toLocaleDateString()}</span></span><button class="btn ghost" data-delkey="${k.id}">Remove</button></div>`).join(""):'<div class="note">No broker connected. You can connect Alpaca from the page of a bot you rent.</div>'}
  <h2 class="sec-title">Invoices</h2><button class="btn ghost" id="invBtn">Show invoices</button><div id="inv"></div>`;
- document.querySelectorAll("[data-stop]").forEach(b=>b.onclick=async()=>{await q(sb.from("rentals").update({live:false}).eq("id",b.dataset.stop));toast("Stopping. Positions are sold within 10 minutes");rentalsView()});
- document.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=async()=>{if(!confirm("Cancel this rental? Any live positions will be sold."))return;const rr=rs.find(x=>x.id===b.dataset.cancel);if(rr.stripe_subscription_id){await fn("cancel-rental",{rental_id:rr.id});toast("Ends at the end of the billing period")}else await q(sb.from("rentals").update({status:"cancelled",live:false}).eq("id",rr.id));rentalsView()});
+ document.querySelectorAll("[data-stop]").forEach(b=>b.onclick=async()=>{await q(sb.from("rentals").update({live:false}).eq("id",b.dataset.stop));toast("Stopping. Positions are sold within 10 minutes");renderRentalsView()});
+ document.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=async()=>{if(!confirm("Cancel this rental? Any live positions will be sold."))return;const rr=rs.find(x=>x.id===b.dataset.cancel);if(rr.stripe_subscription_id){await fn("cancel-rental",{rental_id:rr.id});toast("Ends at the end of the billing period")}else await q(sb.from("rentals").update({status:"cancelled",live:false}).eq("id",rr.id));renderRentalsView()});
  const ib=$("invBtn");if(ib)ib.onclick=async()=>{const r=await fn("my-invoices",{});$("inv").innerHTML=(r.invoices||[]).map(i=>`<div class="rv">${new Date(i.created*1000).toLocaleDateString()}, ${esc(i.number||"invoice")}, ${(i.amount/100).toFixed(2)} ${String(i.currency).toUpperCase()}, ${esc(i.status)} ${i.url?`<a class="lnk" href="${esc(i.url)}" target="_blank" rel="noopener">View</a>`:""}</div>`).join("")||'<div class="note" style="margin-top:10px">No invoices yet.</div>'};
  document.querySelectorAll("[data-delkey]").forEach(b=>b.onclick=async()=>{await q(sb.from("exchange_connections").delete().eq("id",b.dataset.delkey));rentalsView()})}
 
 async function bell(){const{count}=await sb.from("notifications").select("id",{count:"exact",head:true}).eq("read",false);$("bellN").textContent=count?(count>9?"9+":count):""}
 setInterval(()=>{if(me)bell()},60000);
 function init2(){
+ const searchDlg=$("userSearch"),searchInput=$("userSearchInput"),searchResults=$("userSearchResults"),searchBox=$("userSearchBox");
+ searchBox.hidden=false;
+ const runUserSearch=async()=>{const term=searchInput.value.trim().replace(/[%,()]/g," ");if(term.length<2){searchResults.hidden=false;searchResults.innerHTML='<div class="note">Enter at least 2 characters.</div>';return}if(!location.hash.startsWith("#/feed")){history.pushState(null,"","/#/feed");await route()}searchResults.hidden=true;searchResults.innerHTML="";const rows=await q(sb.from("profiles").select("handle,display_name,color,avatar_url,relay_score").or(`display_name.ilike.%${term}%,handle.ilike.%${term}%`).order("display_name").limit(20));searchResults.hidden=false;searchResults.innerHTML=rows.length?rows.map(x=>`<button class="user-result" type="button" data-profile-handle="${esc(x.handle)}">${av(x.display_name,x.color,x.avatar_url)}<span><b>${esc(x.display_name||x.handle)}</b><small>@${esc(x.handle)}</small></span>${x.relay_score!=null?ring(x.relay_score):""}</button>`).join(""):'<div class="note">No users found.</div>'};
+ searchInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();e.stopPropagation();void runUserSearch()}});$("userSearchIconGo").addEventListener("click",e=>{e.preventDefault();void runUserSearch()});
  $("bellBtn").onclick=async()=>{const ns=await q(sb.from("notifications").select("*").order("created_at",{ascending:false}).limit(30));
   $("notifBody").innerHTML=ns.length?ns.map(n=>`<div class="rv" style="${n.read?"":"font-weight:600"}">${esc(n.body)}${n.link?` <a class="lnk" href="${esc(n.link)}">Open</a>`:""}<div class="note">${new Date(n.created_at).toLocaleString()}</div></div>`).join(""):'<div class="note">No alerts yet.</div>';
   $("notif").showModal();if(ns.some(n=>!n.read)){await sb.from("notifications").update({read:true}).eq("read",false);bell()}};
- $("notifClose").onclick=()=>$("notif").close();$("setBtn").onclick=async()=>{mfaBox();kycBox();const{data}=await sb.from("profiles").select("email_alerts").eq("id",me.id).single();$("setEmail").checked=!!data?.email_alerts;$("settings").showModal()};$("setEmail").onchange=async()=>{await q(sb.from("profiles").update({email_alerts:$("setEmail").checked}).eq("id",me.id));toast("Saved")};$("setClose").onclick=()=>$("settings").close();
+ $("notifClose").onclick=()=>$('notif').close();$("setBtn").onclick=async()=>{mfaBox();kycBox();const{data}=await sb.from("profiles").select("email_alerts,display_name,bio,color").eq("id",me.id).single();if($("setEmail"))$("setEmail").checked=!!data?.email_alerts;if($("setName"))$("setName").value=data?.display_name||prof?.display_name||"";if($("setBio"))$("setBio").value=data?.bio||"";if($("setColor"))$("setColor").value=data?.color||"#D8FF3E";if($("setAvatar"))$("setAvatar").value="";$("settings").showModal()};$("setEmail").onchange=async()=>{await q(sb.from("profiles").update({email_alerts:$("setEmail").checked}).eq("id",me.id));toast("Saved")};$("setProfileSave").onclick=async()=>{const patch={display_name:$("setName")?.value.trim()||prof?.display_name,bio:$("setBio")?.value.trim()||"",color:$("setColor")?.value||prof?.color||"#5b717a"};await q(sb.from("profiles").update(patch).eq("id",me.id));Object.assign(prof,patch);toast("Profile saved");route()};$("setClose").onclick=()=>$('settings').close();const photoFile=$("photoFile"),photoMenu=$("photoMenu");document.addEventListener("click",e=>{const b=e.target.closest(".profile-photo-trigger");if(!b)return;const img=$("photoPreview");if(img){img.hidden=!prof?.avatar_url;if(prof?.avatar_url)img.src=prof.avatar_url}photoMenu?.showModal()});const photoView=$("photoView");if(photoView)photoView.onclick=()=>{if(prof?.avatar_url)window.open(prof.avatar_url,"_blank","noopener")};if(photoFile)photoFile.onchange=async()=>{const file=photoFile.files?.[0];if(!file)return;if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>2000000){toast("Use a PNG, JPG or WebP image under 2 MB");return}const path=`${me.id}/avatar-${Date.now()}.${file.type.split("/")[1].replace("jpeg","jpg")}`,up=await sb.storage.from("avatars").upload(path,file,{upsert:true,contentType:file.type});if(up.error){toast(up.error.message);return}const pub=sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;await q(sb.from("profiles").update({avatar_url:pub}).eq("id",me.id));prof.avatar_url=pub;photoMenu?.close();toast("Profile photo saved");route()};
  const newPass=async(id,done)=>{const p=$(id).value;if(p.length<8){toast("Use at least 8 characters");return}const{error}=await sb.auth.updateUser({password:p});if(error){toast(error.message);return}$(id).value="";done();toast("Password updated")};
  $("setPass").onclick=()=>newPass("setNew",()=>{});$("rGoPass").onclick=()=>newPass("rNew",()=>$("reset").close());
  $("setDel").onclick=async()=>{if($("setConfirm").value!=="DELETE"){toast("Type DELETE to confirm");return}await fn("delete-account",{});await sb.auth.signOut();$("settings").close();toast("Account deleted")};
@@ -550,7 +616,7 @@ async function kycBox(){
  const box=$("kycBox");if(!box||!me)return;
  const{data}=await sb.from("profiles").select("kyc_status").eq("id",me.id).single(),st=data?.kyc_status||"none";
  const live=((await sb.from("app_config").select("key,value").in("key",["kyc_enabled","live_execution_enabled"])).data||[]).some(r=>r.value==="true");
- box.innerHTML=`<div class="note" style="margin-top:14px"><b>Identity</b>: ${KYC[st]}. ${st==="verified"?"Your ID is verified. Tick keeps only the result, never your documents.":"Verification uses a government ID and a selfie, handled by Stripe. It opens soon and is required before live trading."}</div>${st==="verified"||st==="pending"||!live?"":`<button class="btn ghost" id="kycGo" style="margin-top:8px">Verify identity</button>`}`;
+ const labels={none:"Not verified",pending:"In review",failed:"Not verified: last attempt failed",verified:"Verified"};box.innerHTML=`<div class="note" style="margin-top:14px"><b>Identity</b>: ${labels[st]||labels.none}. ${st==="verified"?"Your ID is verified. Tick keeps only the result, never your documents.":"Verification uses a government ID and a selfie, handled by Stripe. It opens soon and is required before live trading."}</div>${st==="verified"||st==="pending"||!live?"":`<button class="btn ghost" id="kycGo" style="margin-top:8px">Verify identity</button>`}`;
  const go=$("kycGo");if(go)go.onclick=async()=>{go.disabled=true;const r=await fn("kyc-start",{});if(r.url)location.href=r.url;else{go.disabled=false}}}
 async function mfaBox(){
  const box=$("mfaBox"),f=(await sb.auth.mfa.listFactors()).data?.totp?.find(x=>x.status==="verified");
@@ -589,3 +655,5 @@ function init3(){
  try{if(!localStorage.getItem("relay_seen")){$("welcome").showModal();$("welcomeOk").onclick=()=>{$("welcome").close();localStorage.setItem("relay_seen","1")}}}catch{}
 }
 init3();
+
+}

@@ -16,7 +16,7 @@ const bot=(i,o={})=>({id:"b"+i,slug:"bot-"+i,name:"Bot "+i,description:"desc",st
 const DATA={
  markets:[{symbol:"BTC/USDT",quote_volume_24h:1e9},{symbol:"ETH/USDT",quote_volume_24h:5e8}],
  bot_cards:[bot(1,{spark:[100,101,103,102,106,108,107,111]}),bot(2,{verification:"none",trades:0})],
- bots:[{id:"b1",slug:"bot-1",name:"Bot 1",description:"d",price_cents:4900,billing_period:"month",listed:true,verification:"verified",creator_id:"u-me"}],
+ bots:[{id:"b1",slug:"bot-1",name:"Bot 1",description:"d",strategy:"trend",markets:["BTC/USDT","ETH/USDT"],price_cents:4900,billing_period:"month",listed:true,verification:"verified",creator_id:"u-me"}],
  profiles:[{id:"u-me",handle:"me_1",display_name:"Me",bio:"hi",color:"#7c8cff",relay_score:77,is_admin:true,payouts_enabled:true,email_alerts:true,created_at:new Date().toISOString()}],
  reviews:[{id:"r1",bot_id:"b2",rating:5,body:"great",reply:null,reviewer_id:"u-me",created_at:new Date().toISOString(),profiles:{handle:"me_1"},bots:{name:"Bot 2",creator_id:"u-other"}}],
  app_config:[{key:"payments_enabled",value:"true"},{key:"live_execution_enabled",value:"true"},{key:"max_live_allocation_usd",value:"100"},{key:"worker_ip",value:"1.2.3.4"}],
@@ -83,8 +83,8 @@ test("bot detail shows chart, trades, reviews, live panel and verification panel
 test("feed, comments, creator dashboard, rentals, profile and admin render without errors",async()=>{
  const t=await boot(true);
  await t.go("#/feed");assert.match(t.view(),/hello world/);t.$("[data-cm]").click();await t.wait(100);assert.match(t.view(),/nice/);
- await t.go("#/creator");assert.match(t.view(),/My bots/);assert.match(t.view(),/Backtest/);assert.match(t.view(),/overfitting/);assert.match(t.view(),/Payouts are active/);
- await t.go("#/rentals");assert.match(t.view(),/Bot 2/);assert.match(t.view(),/Live/);assert.match(t.view(),/Exchange keys/);
+ await t.go("#/creator");assert.match(t.view(),/My bots/);assert.match(t.view(),/backtest/i);assert.match(t.view(),/overfitting/);assert.match(t.view(),/Payouts are active/);
+ await t.go("#/rentals");assert.match(t.view(),/Bot 2/);assert.match(t.view(),/Live/);assert.match(t.view(),/broker connections/);
  await t.go("#/me");assert.match(t.view(),/Tick score/);assert.match(t.view(),/Save profile/);
  await t.go("#/admin");assert.match(t.view(),/Moderation/);assert.match(t.view(),/Worker/);assert.match(t.view(),/Support tickets/);assert.match(t.view(),/Similar-code/);assert.match(t.view(),/boom/);
  t.w.close();assert.deepEqual(t.errors,[])});
@@ -103,12 +103,12 @@ test("signed-out visitors see sign-in prompts, not errors",async()=>{
 test("hero shows the featured verified record and rows show sparklines and the seal",async()=>{
  const t=await boot(false);await t.go("#/market");
  assert.ok(t.$("#heroProof .chart svg"),"hero chart missing");assert.match(t.$("#heroProof").textContent,/Bot 1/);
- assert.ok(t.$(".card .b-spark svg"),"row sparkline missing");assert.ok(t.$(".card .seal"),"verified seal missing");
+ assert.ok(t.$(".card .bot-spark svg"),"row sparkline missing");assert.ok(t.$(".card .seal"),"verified seal missing");
  assert.match(t.$(".card:nth-child(2)").textContent,/No record yet/);
  t.$("#fVer").checked=true;t.$("#fVer").dispatchEvent(new t.w.Event("change"));await t.wait(120);
  assert.equal(t.errors.length,0);
  t.$("[data-open]").click();await t.wait(250);assert.ok(t.$("#detail").hasAttribute("open"));
- assert.match(t.$("#detailBody").textContent,/Drawdown/)});
+ assert.match(t.$("#detailBody").textContent,/drawdown/i)});
 
 test("community page shows the leaderboard and system posts",async()=>{
  const t=await boot(true);await t.go("#/feed");

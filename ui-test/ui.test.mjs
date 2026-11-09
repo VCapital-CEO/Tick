@@ -25,7 +25,7 @@ const DATA={
  notifications:[{id:"n1",body:"Verification passed",link:"/bots/bot-1",read:false,created_at:new Date().toISOString()}],
  post_feed:[{id:"p1",body:"hello world",system:false,created_at:new Date().toISOString(),author_id:"u-other",handle:"other_1",display_name:"Other",color:"#abcdef",likes:2}],
  post_likes:[],follows:[],comments:[{id:"c1",post_id:"p1",body:"nice",created_at:new Date().toISOString(),profiles:{handle:"me_1"}}],
- bot_versions:[{bot_id:"b1",version:2}],verification_runs:[{bot_id:"b1",state:"running",ends_at:new Date(Date.now()+864e5).toISOString(),result:null,created_at:new Date().toISOString()}],
+ bot_versions:[{bot_id:"b1",version:2,check_state:"warned",check_report:{findings:[{level:"warn",id:"no-data",msg:"decide() never reads candles",line:3}]}}],verification_runs:[{bot_id:"b1",state:"running",ends_at:new Date(Date.now()+864e5).toISOString(),result:null,created_at:new Date().toISOString()}],
  bot_stats:[{bot_id:"b1",ret_90d:5,max_dd:2,trades:12}],
  backtests:[{id:"bt1",bot_id:"b1",state:"done",days:30,created_at:new Date().toISOString(),result:{days:30,ret:8,dd:3,sharpe:1.1,trades:20,consistent:false,halves:{first:{ret:9},second:{ret:-1}},equity:[100,101,103,102,105,104,108]}}],
  exchange_connections:[{id:"k1",label:"main",key_hint:"abcd",created_at:new Date().toISOString()}],
@@ -85,7 +85,7 @@ test("feed, comments, creator dashboard, rentals, profile and admin render witho
  await t.go("#/feed");assert.match(t.view(),/hello world/);t.$("[data-cm]").click();await t.wait(100);assert.match(t.view(),/nice/);
  await t.go("#/creator");assert.match(t.view(),/My bots/);assert.match(t.view(),/Backtest/);assert.match(t.view(),/overfitting/);assert.match(t.view(),/Payouts are active/);
  await t.go("#/rentals");assert.match(t.view(),/Bot 2/);assert.match(t.view(),/Live/);assert.match(t.view(),/Exchange keys/);
- await t.go("#/me");assert.match(t.view(),/Relay score/);assert.match(t.view(),/Save profile/);
+ await t.go("#/me");assert.match(t.view(),/Tick score/);assert.match(t.view(),/Save profile/);
  await t.go("#/admin");assert.match(t.view(),/Moderation/);assert.match(t.view(),/Worker/);assert.match(t.view(),/Support tickets/);assert.match(t.view(),/Similar-code/);assert.match(t.view(),/boom/);
  t.w.close();assert.deepEqual(t.errors,[])});
 
@@ -113,3 +113,17 @@ test("hero shows the featured verified record and rows show sparklines and the s
 test("community page shows the leaderboard and system posts",async()=>{
  const t=await boot(true);await t.go("#/feed");
  assert.match(t.view(),/Top creators/);assert.match(t.view(),/Community/);assert.equal(t.errors.length,0)});
+
+test("upload requirements accept a real bot and reject files that are not trading bots",async()=>{
+ const t=await boot(false),req=t.w.tickReq,failed=(n,s,txt)=>Array.from(req(n,s,txt)).filter(c=>!c.ok).map(c=>c.id);
+ const good="import math\nfrom statistics import mean\n# open(x) in a comment is fine\ndef decide(candles, markets):\n    return {m: 1.0 for m in markets}\n";
+ assert.deepEqual(failed("bot.py",good.length,good),[]);
+ assert.ok(failed("notes.txt",10,"hello").includes("type"));
+ assert.ok(failed("bot.py",20,"just some text\n").includes("decide"));
+ assert.ok(failed("bot.py",20,"def run(x):\n    return 1\n").includes("decide"));
+ assert.ok(failed("bot.py",50,"import socket\ndef decide(c, m):\n    return {}\n").includes("imports"));
+ assert.ok(failed("bot.py",50,"def decide(c, m):\n    exec('1')\n    return {}\n").includes("calls"));
+ assert.ok(failed("bot.py",300000,good).includes("type"));
+ assert.ok(failed("bot.py",20,"\u0000\u0001binary").includes("text"));
+ assert.ok(failed("bot.py",30,"def decide(candles):\n    return {}\n").includes("decide"));
+ assert.deepEqual(t.errors,[]);t.w.close()});

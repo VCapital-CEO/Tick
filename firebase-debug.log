@@ -1,0 +1,22 @@
+[debug] [2026-11-09T01:10:24.693Z] ----------------------------------------------------------------------
+[debug] [2026-11-09T01:10:24.705Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Domin\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy
+[debug] [2026-11-09T01:10:24.706Z] CLI Version:   15.34.2
+[debug] [2026-11-09T01:10:24.707Z] Platform:      win32
+[debug] [2026-11-09T01:10:24.708Z] Node Version:  v24.13.0
+[debug] [2026-11-09T01:10:24.708Z] Detected Agent: unknown
+[debug] [2026-11-09T01:10:24.709Z] Time:          Mon Nov 09 2026 14:10:24 GMT+1300 (New Zealand Daylight Time)
+[debug] [2026-11-09T01:10:24.709Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-11-09T01:10:36.154Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-11-09T01:10:36.154Z] > authorizing via signed-in user (vardemontcapital@gmail.com)
+[debug] [2026-11-09T01:10:36.155Z] [iam] checking project ticktrading for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-11-09T01:10:36.195Z] Checked if tokens are valid: false, expires at: 1794183287015
+[debug] [2026-11-09T01:10:36.195Z] Checked if tokens are valid: false, expires at: 1794183287015
+[debug] [2026-11-09T01:10:36.196Z] > refreshing access token with scopes: []
+[debug] [2026-11-09T01:10:36.202Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-11-09T01:10:36.202Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-11-09T01:10:36.959Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-11-09T01:10:36.959Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-11-09T01:10:36.984Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/ticktrading:testIamPermissions [none]
+[debug] [2026-11-09T01:10:36.985Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/ticktrading:testIamPermissions  x-goog-user-project=ticktrading
+[debug] [2026-11-09T01:10:36.985Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/ticktrading:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}

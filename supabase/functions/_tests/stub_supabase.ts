@@ -18,6 +18,7 @@ function builder(table: string) {
 }
 export const createClient = (_url?: string, _key?: string, _opts?: unknown) => ({
   from: (t: string) => builder(t),
+  rpc: async (fn: string, args?: unknown) => { calls.push({ table: "rpc:" + fn, op: "rpc", payload: args, filters: {} }); return { data: null, error: null }; },
   auth: { getUser: async (token: string) => ({ data: { user: token === "good" ? authUser.current : null } }), admin: { deleteUser: async () => ({ error: null }) } },
   storage: { from: () => ({ download: async () => ({ data: null, error: { message: "n/a" } }) }) },
 });

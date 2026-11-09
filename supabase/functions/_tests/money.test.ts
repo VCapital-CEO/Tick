@@ -42,9 +42,9 @@ Deno.test("an active subscription update changes nothing",async()=>{await hook({
 Deno.test("a paid verification fee starts a run once",async()=>{
  const ev={type:"checkout.session.completed",data:{object:{id:"cs_1",mode:"payment",payment_status:"paid",metadata:{bot_id:"b1",version_id:"v1"}}}};
  reset();responses["payments.select"]={id:"p1",state:"requires_action",amount_cents:1500};await send(ev);
- ok(has("verification_runs","insert"),"run missing");eq((has("bots","update")!.payload as any).verification,"pending");
+ ok(has("rpc:start_verification_run","rpc"),"run missing");
  reset();responses["payments.select"]={id:"p1",state:"paid",amount_cents:1500};await send(ev);   // Stripe retries the same event
- ok(!has("verification_runs","insert"),"a retried event must not start a second run")});
+ ok(!has("rpc:start_verification_run","rpc"),"a retried event must not start a second run")});
 Deno.test("an unpaid checkout does not start verification",async()=>{
  reset();responses["payments.select"]={id:"p2",state:"requires_action",amount_cents:1500};
  await send({type:"checkout.session.completed",data:{object:{id:"cs_2",mode:"payment",payment_status:"unpaid",metadata:{bot_id:"b1",version_id:"v1"}}}});
@@ -58,9 +58,9 @@ Deno.test("account.updated turns creator payouts on only when both capabilities 
 Deno.test("unknown events are accepted and ignored",async()=>{eq((await hook({type:"invoice.created",data:{object:{}}})).status,200);eq(calls.length,0)});
 
 // ---- rental checkout guards
-const bot={id:"b1",name:"Ridge",slug:"ridge",price_cents:4900,billing_period:"month",listed:true,creator_id:"c1",profiles:{stripe_account_id:"acct_c1",payouts_enabled:true}};
+const bot={id:"b1",name:"Ridge",slug:"ridge",price_cents:4900,billing_period:"month",listed:true,verification:"verified",creator_id:"c1",profiles:{stripe_account_id:"acct_c1",payouts_enabled:true}};
 async function checkout(setup:()=>void,token="good"){
- reset();responses["app_config.select"]=[{key:"payments_enabled",value:"true"},{key:"platform_fee_pct",value:"15"}];responses["bots.select"]=bot;setup();
+ reset();responses["app_config.select"]=[{key:"payments_enabled",value:"true"},{key:"live_execution_enabled",value:"true"},{key:"platform_fee_pct",value:"15"}];responses["bots.select"]=bot;setup();
  return handlers.checkout(new Request("http://x",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({bot_id:"b1"})}))}
 Deno.test("checkout needs a signed-in user",async()=>{eq((await checkout(()=>{},"bad")).status,401)});
 Deno.test("checkout is refused while payments are off",async()=>{eq((await checkout(()=>{responses["app_config.select"]=[{key:"payments_enabled",value:"false"}]})).status,409)});

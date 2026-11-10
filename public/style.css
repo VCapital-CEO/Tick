@@ -1143,3 +1143,5 @@ dialog[open]{display:block;animation:fade .18s ease}
 /* X-style interaction icons: larger silhouettes, quiet gray stroke, numeric labels. */
 .x-actions .pact,.x-actions .impressions{color:#8a8f98}.x-actions .pact svg{width:24px;height:24px;flex-basis:24px;stroke-width:1.75}.x-actions .pact span{font:500 16px var(--sans);letter-spacing:-.02em;color:inherit}.x-actions .pact:hover{color:#d8dde3}.x-actions .pact.on{color:var(--lime)}.x-actions .pact.on svg{fill:none;stroke:currentColor}.x-actions .impressions{gap:8px}.x-actions .x-action-tail .pact svg{width:25px;height:25px}.x-actions .x-action-tail{gap:20px}.x-actions .x-action-tail .pact span{display:none}
 @media(max-width:620px){.x-actions .pact svg{width:22px;height:22px;flex-basis:22px}.x-actions .pact span{font-size:13px}.x-actions .x-action-tail .pact svg{width:23px;height:23px}.x-actions .x-action-tail{gap:10px}}
+.media-trigger{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto}.compose-meta{justify-content:flex-start;gap:12px}.compose-actions{margin-left:auto}
+@media(max-width:600px){.compose-meta{gap:10px}.compose-actions{margin-left:auto}}

@@ -274,6 +274,8 @@ async function joinLeave(g,mine){
  if(mine.has(g.id)){if(mine.get(g.id)==="mod"&&!confirm("You moderate this group. Leave anyway?"))return;await q(sb.from("group_members").delete().eq("group_id",g.id).eq("user_id",me.id))}
  else await q(sb.from("group_members").insert({group_id:g.id,user_id:me.id}));groupCache=null}
 
+async function toggleRepost(id,refresh){if(!me){$("auth").showModal();return}const own=(await q(sb.from("post_reposts").select("post_id").eq("post_id",id).eq("user_id",me.id))).length>0;await q(own?sb.from("post_reposts").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_reposts").insert({post_id:id,user_id:me.id}));refresh()}
+async function recordImpressions(posts){if(!me||!posts?.length)return;const rows=posts.map(p=>({post_id:p.id,user_id:me.id}));await sb.from("post_impressions").upsert(rows,{onConflict:"post_id,user_id",ignoreDuplicates:true})}
 async function feed(slug){
  const{groups,mem}=await loadGroupData();
  const mine=new Map(mem.map(m=>[m.group_id,m.role])),G=slug?groups.find(g=>g.slug===slug):null;
@@ -298,9 +300,10 @@ async function feed(slug){
  $("view").innerHTML=`${head}<div class="feedwrap"><div>${compose}
  ${ps.length?ps.map(card).join(""):`<div class="empty"><b>Nothing here yet</b>${G?"Be the first to post in this group.":feedScope==="groups"?"Join a few groups to fill this feed.":feedScope==="following"?"Follow people to see their posts here.":"Post an update to start the conversation."}</div>`}
  ${ps.length>=feedLimit?'<div class="more"><button class="btn ghost" id="moreFeed">Show more posts</button></div>':""}</div>${side}</div>`;
+ void recordImpressions(ps);
  document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
  document.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>comments(b.dataset.cm));
- document.querySelectorAll("[data-repost]").forEach(b=>b.onclick=()=>{if(!me){$("auth").showModal();return}toast("Reposted to your profile")});
+ document.querySelectorAll("[data-repost]").forEach(b=>b.onclick=()=>toggleRepost(b.dataset.repost,()=>feed(slug)));
  document.querySelectorAll("[data-bookmark]").forEach(b=>b.onclick=()=>{const k="tick_bookmarks",a=JSON.parse(localStorage.getItem(k)||"[]"),id=b.dataset.bookmark,i=a.indexOf(id);i<0?a.push(id):a.splice(i,1);localStorage.setItem(k,JSON.stringify(a));b.classList.toggle("on",i<0);toast(i<0?"Post bookmarked":"Bookmark removed")});
  document.querySelectorAll("[data-share]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(location.href);toast("Link copied")}catch{toast("Copy the page link to share")}});
  document.querySelectorAll("[data-fs]").forEach(b=>b.onclick=()=>{feedScope=b.dataset.fs;feedLimit=20;feed()});
@@ -347,7 +350,7 @@ async function profile(handle){
   me&&!mine?sb.from("follows").select("followee_id").eq("follower_id",me.id).eq("followee_id",p.id):Promise.resolve({data:[]}),
   q(sb.from("follows").select("follower_id").eq("followee_id",p.id)),
   q(sb.from("follows").select("followee_id").eq("follower_id",p.id)),
-  q(sb.from("post_feed").select("id,author_id,body,created_at,likes,handle,display_name,color,avatar_url,system,media_url,media_type").eq("author_id",p.id).order("created_at",{ascending:false}).limit(30)),
+  q(sb.from("post_feed").select("id,author_id,body,created_at,likes,reposts,impressions,handle,display_name,color,avatar_url,system,media_url,media_type").eq("author_id",p.id).order("created_at",{ascending:false}).limit(30)),
   q(sb.from("bot_cards").select("*").eq("creator_id",p.id)),
   q(sb.from("reviews").select("*,profiles(handle),bots!inner(name,creator_id)").eq("bots.creator_id",p.id).order("created_at",{ascending:false}).limit(30))
  ]);
@@ -359,8 +362,9 @@ async function profile(handle){
  <div class="profile-tabs" role="tablist"><button class="tab-btn active" data-profile-tab="posts" role="tab" aria-selected="true">Posts</button><button class="tab-btn" data-profile-tab="bots" role="tab" aria-selected="false">Bots</button></div>
  <section class="profile-panel" data-profile-panel="posts">${posts.length?`<div class="profile-posts">${posts.map(x=>`<article class="post fpost"><div class="post-head"><div class="who">${av(x.display_name,x.color,x.avatar_url)}<div class="who-txt"><div class="who-top"><a class="lnk handle" data-profile-handle="${esc(p.handle)}" href="/u/${esc(p.handle)}">${esc(x.display_name||p.handle)}</a><span class="post-handle">@${esc(p.handle)} · ${ago(x.created_at)}</span>${x.system?`<span class="seal">${SEAL}Tick</span>`:""}</div></div></div>${postMenu(x,mine)}</div><p class="body">${esc(x.body)}</p>${postMedia(x)}${postActions(x)}<div id="cm-${x.id}"></div></article>`).join("")}</div>`:'<div class="note">No posts yet.</div>'}</section>
  <section class="profile-panel" data-profile-panel="bots" hidden><div class="botlist" role="list"><div class="cards">${bs.length?bs.map(x=>card(x,{noCreator:true})).join(""):'<div class="empty"><b>No bots listed yet</b>Bots this creator lists will show up here.</div>'}</div></div><h2 class="sec-title profile-subtitle">Reviews</h2>${rv.length?rv.map(r=>`<div class="rv"><b>${"★".repeat(r.rating)}</b> <span class="mute">on ${esc(r.bots.name)} by ${esc(r.profiles?.handle)}</span><div>${esc(r.body)}</div></div>`).join(""):'<div class="note">No reviews yet.</div>'}</section>`;
+ void recordImpressions(posts);
  document.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>comments(b.dataset.cm));
- document.querySelectorAll("[data-repost]").forEach(b=>b.onclick=()=>{if(!me){$("auth").showModal();return}toast("Reposted to your profile")});
+ document.querySelectorAll("[data-repost]").forEach(b=>b.onclick=()=>toggleRepost(b.dataset.repost,()=>profile(handle)));
  document.querySelectorAll("[data-bookmark]").forEach(b=>b.onclick=()=>{const k="tick_bookmarks",a=JSON.parse(localStorage.getItem(k)||"[]"),id=b.dataset.bookmark,i=a.indexOf(id);i<0?a.push(id):a.splice(i,1);localStorage.setItem(k,JSON.stringify(a));b.classList.toggle("on",i<0);toast(i<0?"Post bookmarked":"Bookmark removed")});
  document.querySelectorAll("[data-share]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(location.href);toast("Link copied")}catch{toast("Copy the page link to share")}});
  document.querySelectorAll("[data-like]").forEach(b=>b.onclick=async()=>{if(!me){$("auth").showModal();return}const id=b.dataset.like;const own=(await q(sb.from("post_likes").select("post_id").eq("post_id",id).eq("user_id",me.id))).length>0;await q(own?sb.from("post_likes").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_likes").insert({post_id:id,user_id:me.id}));profile(handle)});

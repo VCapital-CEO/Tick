@@ -181,6 +181,32 @@ async function market(){await marketsReady;
  $("fQ").oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>f(),300)};
  await f()}
 
+function money(v){return Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2})}
+function downloadPerformanceCard(d){
+ const c=document.createElement("canvas");c.width=1400;c.height=800;const x=c.getContext("2d");
+ const grad=x.createLinearGradient(0,0,1400,800);grad.addColorStop(0,"#11161d");grad.addColorStop(1,"#08090c");x.fillStyle=grad;x.fillRect(0,0,c.width,c.height);
+ x.strokeStyle="rgba(216,255,62,.45)";x.lineWidth=3;x.strokeRect(34,34,1332,732);
+ x.fillStyle="#D8FF3E";x.font="900 28px Archivo,Arial,sans-serif";x.fillText("TICK",72,92);
+ x.fillStyle="#8b98a8";x.font="600 18px JetBrains Mono,monospace";x.fillText("VERIFIED PERFORMANCE",72,132);
+ x.fillStyle="#f5f7fa";x.font="900 56px Archivo,Arial,sans-serif";x.fillText(String(d.name).slice(0,28),72,220);
+ x.fillStyle="#8b98a8";x.font="500 18px JetBrains Mono,monospace";x.fillText("30-day verified live-price record",72,260);
+ const pnl=d.pnl>=0?"#D8FF3E":"#ff6b63";x.fillStyle=pnl;x.font="900 78px Archivo,Arial,sans-serif";x.fillText((d.pnl>=0?"+":"")+money(d.pnl),72,390);
+ x.fillStyle="#8b98a8";x.font="600 18px JetBrains Mono,monospace";x.fillText("TOTAL PROFIT / LOSS",72,428);
+ const cols=[["ROI",(d.roi>=0?"+":"")+d.roi.toFixed(2)+"%"],["INITIAL INVESTMENT",money(d.initial)],["CURRENT POSITION VALUE",money(d.current)]];
+ cols.forEach((v,i)=>{const xx=72+i*410;x.fillStyle="#8b98a8";x.font="600 15px JetBrains Mono,monospace";x.fillText(v[0],xx,540);x.fillStyle="#f5f7fa";x.font="800 31px Archivo,Arial,sans-serif";x.fillText(v[1],xx,584)});
+ if(d.points?.length>1){const px=72,py=650,pw=1250,ph=70,min=Math.min(...d.points),max=Math.max(...d.points),span=max-min||1;x.strokeStyle="rgba(216,255,62,.8)";x.lineWidth=4;x.beginPath();d.points.forEach((v,i)=>{const xx=px+i/(d.points.length-1)*pw,yy=py+ph-(v-min)/span*ph;i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()}
+ x.fillStyle="#647181";x.font="500 14px JetBrains Mono,monospace";x.fillText("ticktrading.web.app  ·  Verified record  ·  Past performance does not predict future returns",72,730);
+ const a=document.createElement("a");a.download=`tick-${String(d.name).toLowerCase().replace(/[^a-z0-9]+/g,"-")}-performance.png`;a.href=c.toDataURL("image/png");a.click();
+}
+async function verifiedPerformance(botId,name){
+ const {data:stats}=await sb.from("bot_stats").select("ret_90d").eq("bot_id",botId).maybeSingle();
+ const {data:runs}=await sb.from("verification_runs").select("id").eq("bot_id",botId).eq("state","passed").order("created_at",{ascending:false}).limit(1);
+ const run=runs?.[0];if(!run)return null;
+ const points=await q(sb.from("equity_snapshots").select("equity,ts").eq("run_id",run.id).order("ts"));
+ if(!points?.length)return null;const values=points.map(x=>Number(x.equity)).filter(Number.isFinite);if(!values.length||values[0]<=0)return null;
+ const initial=values[0],current=values.at(-1),roi=(current-initial)/initial*100;
+ return {name,initial,current,pnl:current-initial,roi,points:values,sourceROI:stats?.ret_90d};
+}
 async function detail(id){
  let b=bots.find(x=>x.id===id)||await q(sb.from("bot_cards").select("*").eq("id",id).single());b=(await attachBacktests([b]))[0];
  const rv=await q(sb.from("reviews").select("*,profiles(handle)").eq("bot_id",id).order("created_at",{ascending:false}));
@@ -189,6 +215,7 @@ async function detail(id){
  const ver=mine?await q(sb.from("bot_versions").select("version,check_state,check_report").eq("bot_id",id).order("version",{ascending:false}).limit(1)):[],cs=ver[0]?.check_state;
  const cfg=Object.fromEntries((await q(sb.from("app_config").select("*"))).map(r=>[r.key,r.value]));
  const conns=me&&rent?await q(sb.from("exchange_connections").select("id,label,key_hint")):[];
+ const perf=b.verification==="verified"?await verifiedPerformance(id,b.name):null;
  const live=!rent||mine?"":cfg.live_execution_enabled!=="true"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Not enabled on Tick yet. Rentals run in paper mode.</div></div>':b.verification!=="verified"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Only verified bots can trade live.</div></div>':prof?.kyc_status!=="verified"?'<div class="post" style="margin:0"><b>Live trading</b><div class="note">Verify your identity first: open Settings and choose Verify identity.</div></div>':rent.live?`<div class="post" style="margin:0"><b>Live trading is on</b><div class="note">Allocation $${rent.allocation_usd}. Daily loss limit ${rent.max_daily_loss_pct}%. The bot only trades the cash you allocated, never your other holdings. Updates hourly.</div><button class="btn ghost" id="lvStop" style="margin-top:8px">Stop and sell positions</button></div>`:`<div class="post" style="margin:0"><b>Live trading</b>${rent.paused_reason?`<div class="note neg">Stopped: ${esc(rent.paused_reason)}</div>`:""}
   <div class="note">Live trading runs on your own Alpaca account. You approve Tick on Alpaca's site, so Tick never sees your password, and you can revoke access there at any time. Limit: $${cfg.max_live_allocation_usd} per rental during the beta. You can lose money.</div>
   ${conns.length?`<label class="note" style="display:block;margin-top:8px">Key<select id="lvKey">${conns.map(c=>`<option value="${c.id}">${esc(c.label)} (…${esc(c.key_hint)})</option>`).join("")}</select></label>`:""}
@@ -198,7 +225,7 @@ async function detail(id){
  $("detailBody").innerHTML=`<div class="sheet-top"><div><div class="kick">${esc(b.markets.slice(0,2).join(" · "))||"Bot"}${b.days_live?` · ${b.days_live} days of record`:""}</div><h2 tabindex="-1" id="dTitle">${esc(b.name)}</h2><div class="sheet-sub">${av(b.creator_name,b.creator_color)}<a class="lnk" href="/u/${esc(b.creator_handle)}">@${esc(b.creator_handle)}</a>${ring(b.creator_score)}<span class="b-sep"></span><span>${esc(TYPES[b.strategy])}</span><span class="b-sep"></span>${stars(b)}</div></div>
  <div class="row" style="flex-wrap:nowrap;gap:8px">${codeChip(b)}${badge(b.verification)}<button class="icon" id="dClose" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>
  <div class="sheet-grid"><div class="sheet-main">
- <section><div id="eqChart"><div class="skel" style="height:280px"></div></div>${kpis(b)}</section>
+ <section><div id="eqChart"><div class="skel" style="height:280px"></div></div>${kpis(b)}${perf?`<div class="performance-share"><div><b>Share this verified record</b><span>Generate a premium PNG with the real verified equity figures.</span></div><button class="btn" id="perfCardBtn">Download performance card</button></div>`:""}</section>
  ${b.code_check==="warned"&&(b.code_check_notes||[]).length?`<section class="post"><h3 style="margin-bottom:8px">Code check notes</h3><p class="note" style="margin-bottom:10px">The code passed Tick's checks, with these observations:</p><div class="chips">${b.code_check_notes.map(x=>`<span class="chip">${esc(x)}</span>`).join("")}</div></section>`:""}
  <section><h3>About this bot</h3><p style="max-width:66ch;color:var(--ink2);font-size:15px;line-height:1.65">${esc(b.description)||"The creator has not added a description yet."}</p><div class="chips" style="margin-top:16px">${b.markets.map(x=>`<span class="chip">${esc(x)}</span>`).join("")}</div></section>
  ${rent&&!mine?`<section><h3>Leave a review</h3><div class="two"><select id="rStars" aria-label="Rating"><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option></select><input id="rText" maxlength="400" placeholder="How did it perform?" aria-label="Your review"></div><button class="btn" id="rGo" style="margin-top:14px">Post review</button></section>`:""}
@@ -215,7 +242,7 @@ async function detail(id){
  <p class="note">Past results do not predict future returns. Use exchange keys with trading on and withdrawals off.</p>
  <button class="lnk" id="dReport" style="margin-top:14px">Report this bot</button>`}
  </aside></div>`;
- $("detail").showModal();$("dTitle").focus({preventScroll:true});$("dClose").onclick=()=>$("detail").close();loadCharts(id);
+ $("detail").showModal();$("dTitle").focus({preventScroll:true});$("dClose").onclick=()=>$("detail").close();const pcb=$("perfCardBtn");if(pcb)pcb.onclick=()=>downloadPerformanceCard(perf);loadCharts(id);
  const rb=$("dRent");if(rb)rb.onclick=async()=>{if(!me){$("detail").close();$("auth").showModal();return}
   if(on&&rent.stripe_subscription_id){await fn("cancel-rental",{rental_id:rent.id});toast("Ends at the end of the billing period");$("detail").close();return}
   if(!on&&cfg.payments_enabled==="true"&&b.price_cents>0){const r=await fn("rental-checkout",{bot_id:id});location.href=r.checkout_url;return}
@@ -294,18 +321,21 @@ async function feed(slug){
 async function groupsView(){
  const[groups,mem]=await Promise.all([q(sb.from("group_cards").select("*").order("members",{ascending:false}).order("name")),myGroups()]);
  const mine=new Map(mem.map(m=>[m.group_id,m.role]));
- $("view").innerHTML=`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Feed</button><h1>Groups</h1><p>Find people who trade the way you do, or start your own group.</p></div></div>
- <div class="feedwrap"><div><input id="gFind" type="search" placeholder="Search groups" aria-label="Search groups" style="margin-bottom:12px"><div id="gList"></div></div>
- <aside class="sidebox"><h3>Start a group</h3>${me?`<label class="note">Name<input id="ngName" maxlength="40" placeholder="e.g. Altcoin grid traders"></label><label class="note" style="display:block;margin-top:8px">What is it about?<textarea id="ngDesc" rows="3" maxlength="280"></textarea></label><button class="btn" id="ngGo" style="margin-top:8px">Create group</button><p class="note" style="margin-top:8px">You become its moderator. Up to 3 new groups per hour.</p>`:'<p class="note"><button class="lnk" id="gSign">Sign in</button> to start a group.</p>'}</aside></div>`;
- const draw=()=>{const t=($("gFind").value||"").toLowerCase().trim(),l=groups.filter(g=>!t||g.name.toLowerCase().includes(t)||g.description.toLowerCase().includes(t));
-  $("gList").innerHTML=l.map(g=>`<div class="grow"><div class="g-mark">#</div><div style="min-width:0;flex:1"><button class="lnk" data-go="#/g/${esc(g.slug)}" style="color:var(--ink);font-weight:600;text-align:left;font-size:15px">${esc(g.name)}</button>${g.official?` <span class="seal">${SEAL}Official</span>`:""}<div class="note" style="margin-top:3px">${esc(g.description)}</div><div class="g-meta">${g.members} member${g.members==1?"":"s"} · ${g.posts_7d} post${g.posts_7d==1?"":"s"} this week</div></div>${mine.has(g.id)?'<span class="badge">Joined</span>':`<button class="btn ghost btn-sm" data-join="${g.id}">Join</button>`}</div>`).join("")||'<div class="empty"><b>No groups match</b>Try another word, or start one.</div>';
-  document.querySelectorAll("#gList [data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  document.querySelectorAll("#gList [data-join]").forEach(b=>b.onclick=async()=>{await joinLeave({id:b.dataset.join},mine);groupsView()})};
- draw();$("gFind").oninput=draw;document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
- const gs=$("gSign");if(gs)gs.onclick=()=>$("auth").showModal();
- const ng=$("ngGo");if(ng)ng.onclick=async()=>{const name=$("ngName").value.trim(),slug=slugify(name);if(name.length<3||slug.length<3){toast("Give the group a name of at least 3 letters");return}
-  await q(sb.from("groups").insert({slug,name,description:$("ngDesc").value.trim(),created_by:me.id}));toast("Group created");go("#/g/"+slug)}}
-
+ const joinedCount=mem.length,totalPosts=groups.reduce((n,g)=>n+Number(g.posts_7d||0),0);
+ $("view").innerHTML=`<section class="groups-hero"><div><span class="eyebrow">THE TICK NETWORK</span><h1>Groups</h1><p>Find your trading people, compare ideas and build a feed around the markets you actually follow.</p></div><div class="groups-stats"><div><b>${groups.length}</b><span>Communities</span></div><div><b>${joinedCount}</b><span>Joined</span></div><div><b>${totalPosts}</b><span>Posts this week</span></div></div></section>
+ <div class="groups-toolbar"><label class="group-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg><input id="gFind" type="search" placeholder="Search groups by name or topic" aria-label="Search groups"></label>${me?'<button class="btn" id="ngGoTop">Create a group</button>':'<button class="btn" id="gSignTop">Sign in to create</button>'}</div>
+ <div class="group-layout"><div><div id="gList" class="group-card-grid"></div></div><aside class="group-create-panel" id="groupCreatePanel"><div class="eyebrow">START SOMETHING</div><h2>Create a group</h2><p>${me?'Bring together traders around a strategy, market or shared edge.':'Sign in to create a group and start building your own trading community.'}</p>${me?`<label class="note">Name<input id="ngName" maxlength="40" placeholder="e.g. Altcoin grid traders"></label><label class="note" style="display:block;margin-top:12px">What is it about?<textarea id="ngDesc" rows="4" maxlength="280" placeholder="What should people expect here?"></textarea></label><button class="btn block" id="ngGo" style="margin-top:12px">Create group</button><p class="note" style="margin-top:10px">You become its moderator. Up to 3 new groups per hour.</p>`:'<button class="btn ghost block" id="gSign">Sign in</button>'}</aside></div>`;
+ const draw=()=>{const t=($('gFind').value||'').toLowerCase().trim(),l=groups.filter(g=>!t||g.name.toLowerCase().includes(t)||g.description.toLowerCase().includes(t));
+  $('gList').innerHTML=l.map(g=>`<article class="group-card"><div class="group-card-top"><div class="g-mark">#</div><div class="group-card-title"><button class="lnk" data-go="#/g/${esc(g.slug)}">${esc(g.name)}</button>${g.official?`<span class="seal">${SEAL}Official</span>`:''}</div></div><p>${esc(g.description)||'A focused place to talk markets and trading.'}</p><div class="group-card-foot"><span>${g.members} member${g.members==1?'':'s'}</span><span>${g.posts_7d} post${g.posts_7d==1?'':'s'} this week</span>${mine.has(g.id)?`<button class="btn ghost btn-sm" data-leave="${g.id}">Leave</button>`:`<button class="btn btn-sm" data-join="${g.id}">Join</button>`}</div></article>`).join('')||'<div class="empty"><b>No groups match</b>Try another search or create a new group.</div>';
+  document.querySelectorAll('#gList [data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+  document.querySelectorAll('#gList [data-join]').forEach(b=>b.onclick=async()=>{await joinLeave({id:b.dataset.join},mine);groupsView()});
+  document.querySelectorAll('#gList [data-leave]').forEach(b=>b.onclick=async()=>{await joinLeave({id:b.dataset.leave},mine);groupsView()});
+ };
+ draw();$('gFind').oninput=draw;
+ const gs=$('gSign'),gst=$('gSignTop');[gs,gst].forEach(b=>{if(b)b.onclick=()=>$('auth').showModal()});
+ const top=$('ngGoTop');if(top)top.onclick=()=>$('groupCreatePanel').scrollIntoView({behavior:'smooth',block:'center'});
+ const ng=$('ngGo');if(ng)ng.onclick=async()=>{const name=$('ngName').value.trim(),slug=slugify(name);if(name.length<3||slug.length<3){toast('Give the group a name of at least 3 letters');return}await q(sb.from('groups').insert({slug,name,description:$('ngDesc').value.trim(),created_by:me.id}));toast('Group created');go('#/g/'+slug)};
+}
 async function profile(handle){
  const seq=window.__navSeq;
  const p=await q(sb.from("profiles").select("*").eq("handle",handle).maybeSingle());

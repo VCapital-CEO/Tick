@@ -105,10 +105,10 @@ function logClient(e){
  // table/policy, and a failed diagnostic insert must never create a second error.
 }
 window.addEventListener("unhandledrejection",ev=>logClient(ev.reason));
-let navSeq=0;
+let navSeq=0,groupCache=null,groupCacheAt=0,groupCacheUser="";
 async function route(){
  const seq=++navSeq;window.__navSeq=seq;
- const v=$("view");if(!v.innerHTML)v.innerHTML='<div class="empty">Loading…</div>';v.setAttribute("aria-busy","true");
+ const v=$("view");v.innerHTML=skeleton();v.setAttribute("aria-busy","true");
  try{await route0()}catch(e){if(seq!==window.__navSeq)return;const msg=String(e?.message||"");v.innerHTML=`<div class="empty"><b>Something went wrong.</b>${msg?`<p class="note" style="margin-top:8px">${esc(msg)}</p>`:""}<button class="btn ghost" id="retry" style="margin-top:14px">Try again</button></div>`;$("retry").onclick=route;logClient(e)}
  finally{v.removeAttribute("aria-busy")}}
 async function route0(){
@@ -266,14 +266,15 @@ const slugify=n=>n.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"
 const gchip=p=>p.group_slug?`<button class="chip" data-go="#/g/${esc(p.group_slug)}" style="border:0;cursor:pointer">${esc(p.group_name)}</button>`:"";
 const postActions=(p)=>`<div class="pactions x-actions" aria-label="Post actions"><button class="pact" data-cm="${p.id}" aria-label="Comment"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7 7 0 0 1-7 7H8l-4 3v-4.3a7 7 0 0 1 4-12.7h5a7 7 0 0 1 7 7z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg><span>${p.comments||0}</span></button><button class="pact" data-repost="${p.id}" aria-label="Repost"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10l-3-3M17 17H7l3 3M17 7a6 6 0 0 1 0 10M7 17A6 6 0 0 1 7 7"/></svg><span>Repost</span></button><button class="pact ${p._liked?"on":""}" data-like="${p.id}" aria-label="Like"><svg viewBox="0 0 24 24" aria-hidden="true" class="fillable"><path d="M12 20s-7-4.6-7-9.4A3.9 3.9 0 0 1 12 7.7a3.9 3.9 0 0 1 7 2.9C19 15.4 12 20 12 20z"/></svg><span>${p.likes||0}</span></button><span class="pact impressions" aria-label="Impressions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-7M22 19H2"/></svg><span>Impressions</span></span><span class="x-action-tail"><button class="pact" data-bookmark="${p.id}" aria-label="Bookmark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5A2.5 2.5 0 0 1 8.5 2h7A2.5 2.5 0 0 1 18 4.5V21l-6-3.5L6 21V4.5Z"/></svg></button><button class="pact" data-share="${p.id}" aria-label="Share"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></svg></button></span></div>`;
 const postMenu=(p,owner)=>owner?`<details class="post-menu"><summary aria-label="More post options">•••</summary><div class="post-menu-pop"><button data-del="${p.id}">Delete</button></div></details>`:"";
+async function loadGroupData(){const key=me?.id||"anon";if(groupCache&&groupCacheUser===key&&Date.now()-groupCacheAt<15000)return groupCache;const [groups,mem]=await Promise.all([q(sb.from("group_cards").select("*").order("members",{ascending:false}).order("name")),myGroups()]);groupCache={groups,mem};groupCacheUser=key;groupCacheAt=Date.now();return groupCache}
 async function myGroups(){return me?await q(sb.from("group_members").select("group_id,role").eq("user_id",me.id)):[]}
 async function joinLeave(g,mine){
  if(!me){$("auth").showModal();return}
  if(mine.has(g.id)){if(mine.get(g.id)==="mod"&&!confirm("You moderate this group. Leave anyway?"))return;await q(sb.from("group_members").delete().eq("group_id",g.id).eq("user_id",me.id))}
- else await q(sb.from("group_members").insert({group_id:g.id,user_id:me.id}))}
+ else await q(sb.from("group_members").insert({group_id:g.id,user_id:me.id}));groupCache=null}
 
 async function feed(slug){
- const[groups,mem]=await Promise.all([q(sb.from("group_cards").select("*").order("members",{ascending:false}).order("name")),myGroups()]);
+ const{groups,mem}=await loadGroupData();
  const mine=new Map(mem.map(m=>[m.group_id,m.role])),G=slug?groups.find(g=>g.slug===slug):null;
  if(slug&&!G){$("view").innerHTML='<div class="empty"><b>Group not found</b>It may have been removed. <button class="btn ghost" data-go="#/groups" style="margin-left:8px">Browse groups</button></div>';document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));return}
  let fq=sb.from("post_feed").select("*").order("created_at",{ascending:false}).limit(feedLimit);
@@ -317,7 +318,7 @@ async function feed(slug){
   await q(liked.includes(id)?sb.from("post_likes").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_likes").insert({post_id:id,user_id:me.id}));feed(slug)})}
 
 async function groupsView(){
- const[groups,mem]=await Promise.all([q(sb.from("group_cards").select("*").order("members",{ascending:false}).order("name")),myGroups()]);
+ const{groups,mem}=await loadGroupData();
  const mine=new Map(mem.map(m=>[m.group_id,m.role]));
  const joinedCount=mem.length,totalPosts=groups.reduce((n,g)=>n+Number(g.posts_7d||0),0);
  $("view").innerHTML=`<section class="groups-hero"><div><span class="eyebrow">THE TICK NETWORK</span><h1>Groups</h1><p>Find your trading people, compare ideas and build a feed around the markets you actually follow.</p></div><div class="groups-stats"><div><b>${groups.length}</b><span>Communities</span></div><div><b>${joinedCount}</b><span>Joined</span></div><div><b>${totalPosts}</b><span>Posts this week</span></div></div></section>
@@ -340,14 +341,16 @@ async function profile(handle){
  if(seq!==window.__navSeq)return;
  if(!p){$("view").innerHTML='<div class="empty"><b>Profile not found</b>Check the handle and try again.</div>';return}
  const mine=prof&&prof.id===p.id;
- const fo=me&&!mine?((await sb.from("follows").select("followee_id").eq("follower_id",me.id).eq("followee_id",p.id)).data||[]).length>0:false;
- const [followers,following,posts]=await Promise.all([
+ const [followState,followers,following,posts,botRows,rv]=await Promise.all([
+  me&&!mine?sb.from("follows").select("followee_id").eq("follower_id",me.id).eq("followee_id",p.id):Promise.resolve({data:[]}),
   q(sb.from("follows").select("follower_id").eq("followee_id",p.id)),
   q(sb.from("follows").select("followee_id").eq("follower_id",p.id)),
-  q(sb.from("post_feed").select("id,author_id,body,created_at,likes,handle,display_name,color,system").eq("author_id",p.id).order("created_at",{ascending:false}).limit(30))
+  q(sb.from("post_feed").select("id,author_id,body,created_at,likes,handle,display_name,color,system").eq("author_id",p.id).order("created_at",{ascending:false}).limit(30)),
+  q(sb.from("bot_cards").select("*").eq("creator_id",p.id)),
+  q(sb.from("reviews").select("*,profiles(handle),bots!inner(name,creator_id)").eq("bots.creator_id",p.id).order("created_at",{ascending:false}).limit(30))
  ]);
- const bs=await attachBacktests(await q(sb.from("bot_cards").select("*").eq("creator_id",p.id)));bots=bs;
- const rv=await q(sb.from("reviews").select("*,profiles(handle),bots!inner(name,creator_id)").eq("bots.creator_id",p.id).order("created_at",{ascending:false}).limit(30));
+ const fo=(followState.data||[]).length>0;
+ const bs=await attachBacktests(botRows);bots=bs;
  if(seq!==window.__navSeq)return;
  $("view").innerHTML=`<div class="p-head">${mine?`<button class="profile-photo-trigger" aria-label="Profile photo">${av(p.display_name,p.color,p.avatar_url)}</button>`:av(p.display_name,p.color,p.avatar_url)}<div class="profile-copy"><h1>${esc(p.display_name)}</h1><div class="handle-row"><span class="h">@${esc(p.handle)}</span>${p.kyc_status==="verified"?'<em class="src src-verified" title="Government ID checked by Stripe">ID verified</em>':""}</div><p style="margin-top:16px;max-width:56ch;color:var(--ink2);font-size:15px">${esc(p.bio)||"No bio yet."}</p>${me&&!mine?`<button class="btn ${fo?"ghost":""}" id="folBtn" style="margin-top:18px">${fo?"Following":"Follow"}</button>`:""}</div>
  <div class="profile-stats"><div><b>${followers.length}</b><span>Followers</span></div><div><b>${following.length}</b><span>Following</span></div><div class="profile-score">${p.relay_score==null?'<span class="ring" style="--p:0"><span>–</span></span>':ring(p.relay_score)}<span>Tick score</span></div></div></div>

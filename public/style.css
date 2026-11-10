@@ -1145,3 +1145,9 @@ dialog[open]{display:block;animation:fade .18s ease}
 @media(max-width:620px){.x-actions .pact svg{width:22px;height:22px;flex-basis:22px}.x-actions .pact span{font-size:13px}.x-actions .x-action-tail .pact svg{width:23px;height:23px}.x-actions .x-action-tail{gap:10px}}
 .media-trigger{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto}.compose-meta{justify-content:flex-start;gap:12px}.compose-actions{margin-left:auto}
 @media(max-width:600px){.compose-meta{gap:10px}.compose-actions{margin-left:auto}}
+/* Compact the interaction row icons by roughly 20%. */
+.x-actions .pact svg{width:19px;height:19px;flex-basis:19px}.x-actions .x-action-tail .pact svg{width:20px;height:20px}.x-actions .pact span{font-size:15px}
+@media(max-width:620px){.x-actions .pact svg{width:18px;height:18px;flex-basis:18px}.x-actions .x-action-tail .pact svg{width:19px;height:19px}.x-actions .pact span{font-size:12px}}
+/* Final locked interaction icon sizing. */
+.post .x-actions .pact svg,.fpost .x-actions .pact svg{width:18px!important;height:18px!important;flex-basis:18px!important}.post .x-actions .x-action-tail .pact svg,.fpost .x-actions .x-action-tail .pact svg{width:19px!important;height:19px!important;flex-basis:19px!important}
+@media(max-width:620px){.post .x-actions .pact svg,.fpost .x-actions .pact svg{width:17px!important;height:17px!important;flex-basis:17px!important}.post .x-actions .x-action-tail .pact svg,.fpost .x-actions .x-action-tail .pact svg{width:18px!important;height:18px!important;flex-basis:18px!important}}

@@ -183,19 +183,17 @@ async function market(){await marketsReady;
 
 function money(v){return Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2})}
 function downloadPerformanceCard(d){
- const c=document.createElement("canvas");c.width=1400;c.height=800;const x=c.getContext("2d");
- const grad=x.createLinearGradient(0,0,1400,800);grad.addColorStop(0,"#11161d");grad.addColorStop(1,"#08090c");x.fillStyle=grad;x.fillRect(0,0,c.width,c.height);
- x.strokeStyle="rgba(216,255,62,.45)";x.lineWidth=3;x.strokeRect(34,34,1332,732);
- x.fillStyle="#D8FF3E";x.font="900 28px Archivo,Arial,sans-serif";x.fillText("TICK",72,92);
- x.fillStyle="#8b98a8";x.font="600 18px JetBrains Mono,monospace";x.fillText("VERIFIED PERFORMANCE",72,132);
- x.fillStyle="#f5f7fa";x.font="900 56px Archivo,Arial,sans-serif";x.fillText(String(d.name).slice(0,28),72,220);
- x.fillStyle="#8b98a8";x.font="500 18px JetBrains Mono,monospace";x.fillText("30-day verified live-price record",72,260);
- const pnl=d.pnl>=0?"#D8FF3E":"#ff6b63";x.fillStyle=pnl;x.font="900 78px Archivo,Arial,sans-serif";x.fillText((d.pnl>=0?"+":"")+money(d.pnl),72,390);
- x.fillStyle="#8b98a8";x.font="600 18px JetBrains Mono,monospace";x.fillText("TOTAL PROFIT / LOSS",72,428);
- const cols=[["ROI",(d.roi>=0?"+":"")+d.roi.toFixed(2)+"%"],["INITIAL INVESTMENT",money(d.initial)],["CURRENT POSITION VALUE",money(d.current)]];
- cols.forEach((v,i)=>{const xx=72+i*410;x.fillStyle="#8b98a8";x.font="600 15px JetBrains Mono,monospace";x.fillText(v[0],xx,540);x.fillStyle="#f5f7fa";x.font="800 31px Archivo,Arial,sans-serif";x.fillText(v[1],xx,584)});
- if(d.points?.length>1){const px=72,py=650,pw=1250,ph=70,min=Math.min(...d.points),max=Math.max(...d.points),span=max-min||1;x.strokeStyle="rgba(216,255,62,.8)";x.lineWidth=4;x.beginPath();d.points.forEach((v,i)=>{const xx=px+i/(d.points.length-1)*pw,yy=py+ph-(v-min)/span*ph;i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()}
- x.fillStyle="#647181";x.font="500 14px JetBrains Mono,monospace";x.fillText("ticktrading.web.app  ·  Verified record  ·  Past performance does not predict future returns",72,730);
+ const c=document.createElement("canvas");c.width=1200;c.height=675;const x=c.getContext("2d"),lime="#D8FF3E",ink="#F5F7F8",mute="#8D98A4";
+ const bg=x.createLinearGradient(0,0,1200,675);bg.addColorStop(0,"#11151b");bg.addColorStop(1,"#08090c");x.fillStyle=bg;x.fillRect(0,0,1200,675);
+ x.strokeStyle="rgba(255,255,255,.055)";x.lineWidth=1;for(let i=0;i<20;i++){x.beginPath();x.moveTo(i*60,0);x.lineTo(i*60,675);x.stroke()}for(let i=0;i<12;i++){x.beginPath();x.moveTo(0,i*60);x.lineTo(1200,i*60);x.stroke()}
+ x.fillStyle="rgba(216,255,62,.09)";x.beginPath();x.arc(20,700,520,0,Math.PI*2);x.fill();x.fillStyle=lime;x.fillRect(874,0,2,230);x.shadowColor="rgba(216,255,62,.2)";x.shadowBlur=35;x.fillRect(874,0,2,230);x.shadowBlur=0;
+ x.fillStyle="rgba(14,18,23,.94)";x.fillRect(874,40,278,595);x.strokeStyle="rgba(216,255,62,.3)";x.strokeRect(874,40,278,595);
+ x.fillStyle=ink;x.font="900 27px Archivo,Arial,sans-serif";x.fillText("TICK/",48,75);x.fillStyle=lime;x.font="700 10px JetBrains Mono,monospace";x.fillText("VERIFIED · 30 DAYS",910,75);
+ x.fillStyle=mute;x.font="700 10px JetBrains Mono,monospace";x.fillText("TRADING BOT PERFORMANCE",48,150);x.fillStyle=ink;x.font="800 31px Archivo,Arial,sans-serif";x.fillText(String(d.name).slice(0,25),48,188);
+ x.fillStyle=lime;x.font="900 108px Archivo,Arial,sans-serif";x.fillText((d.pnl>=0?"+":"")+money(d.pnl),48,330);x.fillStyle=mute;x.font="700 11px JetBrains Mono,monospace";x.fillText("TOTAL PROFIT / LOSS",50,357);x.fillStyle="#68727d";x.font="500 10px JetBrains Mono,monospace";x.fillText("Verified live-price record · equity curve at right",50,454);
+ x.fillStyle=lime;x.font="700 10px JetBrains Mono,monospace";x.fillText("PERFORMANCE SNAPSHOT",900,88);const ms=[["ROI",(d.roi>=0?"+":"")+d.roi.toFixed(2)+"%"],["INITIAL INVESTMENT",money(d.initial)],["CURRENT POSITION VALUE",money(d.current)],["RECORD","Verified"]];ms.forEach((m,i)=>{const yy=145+i*82;x.strokeStyle="rgba(255,255,255,.16)";x.beginPath();x.moveTo(900,yy-22);x.lineTo(1125,yy-22);x.stroke();x.fillStyle=mute;x.font="600 10px JetBrains Mono,monospace";x.fillText(m[0],900,yy);x.fillStyle=i===0||i===3?lime:ink;x.font=`800 ${i===0?42:26}px Archivo,Arial,sans-serif`;x.fillText(m[1],900,yy+31)});
+ if(d.points?.length>1){const px=900,py=500,pw=225,ph=75,min=Math.min(...d.points),max=Math.max(...d.points),span=max-min||1;x.strokeStyle="#26302a";x.lineWidth=1;[0,37,74].forEach(v=>{x.beginPath();x.moveTo(px,py+v);x.lineTo(px+pw,py+v);x.stroke()});x.strokeStyle=lime;x.lineWidth=3;x.beginPath();d.points.forEach((v,i)=>{const xx=px+i/(d.points.length-1)*pw,yy=py+ph-(v-min)/span*ph;i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()}
+ x.fillStyle="#68717d";x.font="500 10px JetBrains Mono,monospace";x.fillText("ticktrading.web.app · Past performance does not predict future returns.",48,642);x.fillStyle="#0b0e12";x.fillRect(970,618,175,28);x.fillStyle=lime;x.font="800 10px JetBrains Mono,monospace";x.fillText("VERIFIED RECORD",983,636);
  const a=document.createElement("a");a.download=`tick-${String(d.name).toLowerCase().replace(/[^a-z0-9]+/g,"-")}-performance.png`;a.href=c.toDataURL("image/png");a.click();
 }
 async function verifiedPerformance(botId,name){

@@ -200,7 +200,7 @@ function downloadPerformanceCard(d){
 }
 async function verifiedPerformance(botId,name){
  const {data:stats}=await sb.from("bot_stats").select("ret_90d").eq("bot_id",botId).maybeSingle();
- const {data:runs}=await sb.from("verification_runs").select("id").eq("bot_id",botId).eq("state","passed").order("created_at",{ascending:false}).limit(1);
+ const {data:runs}=await sb.from("verification_runs").select("id").eq("bot_id",botId).eq("state","verified").order("created_at",{ascending:false}).limit(1);
  const run=runs?.[0];if(!run)return null;
  const points=await q(sb.from("equity_snapshots").select("equity,ts").eq("run_id",run.id).order("ts"));
  if(!points?.length)return null;const values=points.map(x=>Number(x.equity)).filter(Number.isFinite);if(!values.length||values[0]<=0)return null;

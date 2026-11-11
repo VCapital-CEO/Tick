@@ -94,9 +94,10 @@ const skeleton=()=>`<div class="grid-skel" aria-hidden="true">${Array.from({leng
 async function setUser(u){me=u||null;prof=null;
  if(me){const{data}=await sb.from("profiles").select("*").eq("id",me.id).maybeSingle();prof=data}
  $("authBtn").textContent=me?"Sign out":"Sign in";$("acct").style.display=me?"flex":"none";if(me)bell();$("navAdmin").style.display=isStaff()?"":"none";const adminSheet=document.querySelector('#navSheet button[data-h="#/admin"]');if(adminSheet)adminSheet.style.display=isStaff()?"":"none";route()}
+async function safeRows(query){const{data,error}=await query;return error?[]:(data||[])}
 async function attachBacktests(rows){
  const ids=(rows||[]).map(x=>x.id).filter(Boolean);if(!ids.length)return rows||[];
- const all=await q(sb.from("bot_public_backtests").select("*").in("bot_id",ids).order("created_at",{ascending:false}));
+ const all=await safeRows(sb.from("bot_public_backtests").select("*").in("bot_id",ids).order("created_at",{ascending:false}));
  const latest=new Map();(all||[]).forEach(x=>{if(!latest.has(x.bot_id))latest.set(x.bot_id,x)});
  return (rows||[]).map(x=>({...x,backtest:latest.get(x.id)||null}));
 }
@@ -278,7 +279,7 @@ async function joinLeave(g,mine){
 
 async function toggleRepost(id,refresh){if(!me){$("auth").showModal();return}const own=(await q(sb.from("post_reposts").select("post_id").eq("post_id",id).eq("user_id",me.id))).length>0;await q(own?sb.from("post_reposts").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_reposts").insert({post_id:id,user_id:me.id}));refresh()}
 async function recordImpressions(posts){if(!me||!posts?.length)return;const rows=posts.map(p=>({post_id:p.id,user_id:me.id}));await sb.from("post_impressions").upsert(rows,{onConflict:"post_id,user_id",ignoreDuplicates:true})}
-async function toggleBookmark(id,refresh){if(!me){$("auth").showModal();return}const own=(await q(sb.from("post_bookmarks").select("post_id").eq("post_id",id).eq("user_id",me.id))).length>0;await q(own?sb.from("post_bookmarks").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_bookmarks").insert({post_id:id,user_id:me.id}));refresh()}
+async function toggleBookmark(id,refresh){if(!me){$("auth").showModal();return}const own=(await safeRows(sb.from("post_bookmarks").select("post_id").eq("post_id",id).eq("user_id",me.id))).length>0;const{error}=await(own?sb.from("post_bookmarks").delete().eq("post_id",id).eq("user_id",me.id):sb.from("post_bookmarks").insert({post_id:id,user_id:me.id}));if(error){toast("Bookmarks are being enabled. Run the latest Supabase migration.");return}refresh()}
 async function recordShare(id,refresh){if(!me){$("auth").showModal();return}await q(sb.from("post_shares").upsert({post_id:id,user_id:me.id},{onConflict:"post_id,user_id",ignoreDuplicates:true}));try{await navigator.clipboard.writeText(location.href);toast("Link copied")}catch{toast("Copy the page link to share")}refresh()}
 async function feed(slug){
  const{groups,mem}=await loadGroupData();
@@ -289,7 +290,7 @@ async function feed(slug){
  else if(feedScope==="following"&&me){const f=await q(sb.from("follows").select("followee_id").eq("follower_id",me.id));fq=fq.in("author_id",f.map(x=>x.followee_id).concat([me.id]))}
  else if(feedScope==="groups"&&me){const ids=[...mine.keys()];fq=fq.in("group_id",ids.length?ids:[NIL])}
  const[ps,top]=await Promise.all([q(fq),G?[]:q(sb.from("profiles").select("handle,display_name,color,relay_score").not("relay_score","is",null).order("relay_score",{ascending:false}).limit(5))]);
- let liked=[],bookmarked=[];if(me){const [likes,marks]=await Promise.all([q(sb.from("post_likes").select("post_id").eq("user_id",me.id)),q(sb.from("post_bookmarks").select("post_id").eq("user_id",me.id))]);liked=likes.map(x=>x.post_id);bookmarked=marks.map(x=>x.post_id)}
+ let liked=[],bookmarked=[];if(me){const [likes,marks]=await Promise.all([safeRows(sb.from("post_likes").select("post_id").eq("user_id",me.id)),safeRows(sb.from("post_bookmarks").select("post_id").eq("user_id",me.id))]);liked=likes.map(x=>x.post_id);bookmarked=marks.map(x=>x.post_id)}
  const isMod=g=>g&&(mine.get(g)==="mod"||isStaff()),joined=g=>g&&mine.has(g);
  const opts=groups.filter(g=>mine.has(g.id)),dflt=G&&joined(G.id)?G.id:"";
  const head=G?`<div class="phead"><div><button class="lnk" data-go="#/feed" style="color:var(--mute)">Feed</button><h1>${esc(G.name)}${G.official?` <span class="seal">${SEAL}Official</span>`:""}</h1><p>${esc(G.description)||"No description yet."}</p><div class="note" style="margin-top:6px">${G.members} member${G.members==1?"":"s"}, ${G.posts_7d} post${G.posts_7d==1?"":"s"} this week</div></div><div><button class="btn ${joined(G.id)?"ghost":""}" id="gJoin">${joined(G.id)?(mine.get(G.id)==="mod"?"Moderator: leave":"Leave group"):"Join group"}</button></div></div>`

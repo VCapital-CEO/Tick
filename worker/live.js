@@ -48,9 +48,20 @@ async function order(sym,side,amt,id,key,secret){
 
 const equityOf=(s,prices)=>s.cash+Object.entries(s.pos).reduce((a,[m,p])=>a+p.qty*(prices[m]??p.avg),0);
 const save=(db,r,s)=>db.from("rentals").update({live_state:s}).eq("id",r.id);
+const recordRentalEquity=(db,r,s,prices)=>db.from("rental_snapshots").upsert({rental_id:r.id,ts:new Date(Math.floor(Date.now()/HOUR)*HOUR).toISOString(),equity:equityOf(s,prices)},{onConflict:"rental_id,ts",ignoreDuplicates:true});
 const rec=(db,r,m,side,o,realized)=>db.from("fills").insert({bot_id:r.bot_id,rental_id:r.id,market:m,side,qty:o.exec,price:o.price,fee:o.fee,realized_pnl:realized,exchange_order_id:o.id});
 const stop=(db,r,reason)=>db.from("rentals").update({live:false,paused_reason:reason}).eq("id",r.id);
 const symOf=(SYM,m)=>SYM[m]||m.replace("/","");
+async function recordCurrentRentalEquity(db,r,ctx){
+ const{data:fresh}=await db.from("rentals").select("live_state").eq("id",r.id).maybeSingle();
+ const st=fresh?.live_state;
+ if(!st||st.cash==null||!r.live||r.status!=="active")return;
+ const prices={};
+ for(const m of (r.bots?.markets||[]).filter(m=>ctx.SYM[m]).slice(0,10)){
+  const cs=await ctx.candles(m);if(cs?.length)prices[m]=cs.at(-1).c;
+ }
+ if(Object.keys(prices).length)await recordRentalEquity(db,r,st,prices);
+}
 
 async function cancelStop(sym,p,key,secret){if(!p.stopId)return;try{await bn("DELETE","/api/v3/order",{symbol:sym,orderId:p.stopId},key,secret)}catch{}p.stopId=null}
 async function placeStop(sym,p,pct,px,ru,key,secret,log){
@@ -87,8 +98,8 @@ async function decide(db,r,mk,cs,sandbox,s){
 
 async function one(db,r,ctx){
  const{SYM,halt,candles,sandbox}=ctx,log=ctx.log||console.error,c=r.exchange_connections;if(!c)return;
- if(c.exchange==="kraken")return oneKraken({dec,save,rec,stop,equityOf,decide},db,r,ctx);
- if(c.exchange==="alpaca")return oneAlpaca({dec,save,rec,stop,equityOf,decide},db,r,ctx);
+ if(c.exchange==="kraken"){const out=await oneKraken({dec,save,rec,stop,equityOf,recordRentalEquity,decide},db,r,ctx);await recordCurrentRentalEquity(db,r,ctx);return out;}
+ if(c.exchange==="alpaca"){const out=await oneAlpaca({dec,save,rec,stop,equityOf,recordRentalEquity,decide},db,r,ctx);await recordCurrentRentalEquity(db,r,ctx);return out;}
  if(/data-api/.test(BASE))return;  // this host serves market data only, so Binance trading is skipped
  let s=r.live_state&&r.live_state.cash!=null?r.live_state:null;
  const hasPos=s&&Object.values(s.pos||{}).some(p=>p.qty>0);
@@ -130,7 +141,7 @@ async function one(db,r,ctx){
    const o=await order(sym,"SELL",{qty:q},cid(r.id,slot,m,"sell"),key,secret);
    s.cash+=o.quote-o.fee;p.qty-=o.exec;await rec(db,r,m,"sell",o,(o.price-p.avg)*o.exec-o.fee);await save(db,r,s)}}
  for(const m of mk){const p=s.pos[m];if(p?.qty>0&&r.stop_loss_pct&&!p.stopId)await placeStop(SYM[m],p,r.stop_loss_pct,prices[m],await rules(SYM[m]),key,secret,log)}
- s.slot=slot;s.errors=0;await save(db,r,s)}
+ s.slot=slot;s.errors=0;await recordRentalEquity(db,r,s,prices);await save(db,r,s)}
 
 export async function liveTick(db,ctx){
  const log=ctx.log||console.error;

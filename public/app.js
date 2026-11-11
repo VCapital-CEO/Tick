@@ -62,14 +62,16 @@ const SRC={paper:["Paper","Simulated trades on live market prices. No real money
 const srcOf=b=>SRC[b.stats_source]||SRC.paper;
 const srcTag=b=>`<em class="src src-${b.stats_source||"paper"}" title="${esc(srcOf(b)[1])}">${srcOf(b)[0]}</em>`;
 function kpis(b){
- if(!b.trades&&b.backtest?.result){const r=b.backtest.result;return`<div class="kpis historical"><div><b class="${r.ret>=0?"pos":"neg"}">${sgn(r.ret)}</b><span>30d simulated return</span></div><div><b>${num(r.dd)}%</b><span>Drawdown</span></div><div><b>${num(r.sharpe,2)}</b><span>Sharpe</span></div><div><b>${r.trades}</b><span>Trades</span></div></div><p class="note src-note">Historical backtest only; not verified and not a live trading record.</p>`}
+ const useSample=b.verification!=="verified"&&b.backtest?.result;
+ if(useSample){const r=b.backtest.result;return`<div class="kpis historical"><div><b class="${r.ret>=0?"pos":"neg"}">${sgn(r.ret)}</b><span>30d simulated return</span></div><div><b>${num(r.dd)}%</b><span>Drawdown</span></div><div><b>${num(r.sharpe,2)}</b><span>Sharpe</span></div><div><b>${r.trades}</b><span>Trades</span></div></div><p class="note src-note">Historical backtest only; not verified and not a live trading record.</p>`}
  if(!b.trades)return'<div class="note" style="margin:22px 0 8px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">No record yet. This bot starts a free paper run as soon as it passes the code checks, and numbers appear after its first trades.</div>';
  const k=(v,l,c="")=>`<div><b class="${c}">${v}</b><span>${l}</span></div>`,r=b.ret_90d;
  return`<div class="kpis">${k(sgn(r),"Return",r>=0?"pos":"neg")}${k(num(b.max_dd)+"%","Max drawdown")}${k(num(b.sharpe,2),"Sharpe ratio")}${k(num(b.win_rate,0)+"%","Winning trades")}${k(b.trades,"Trades")}${k(b.days_live,"Days of record")}</div><p class="note src-note">${srcTag(b)} ${esc(srcOf(b)[1])} Results switch to real trades once the bot trades live for a renter.</p>`}
 const CTA=`<span class="bot-cta">Rent<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>`;
 function card(b,o={}){
- const has=b.trades>0,r=Number(b.ret_90d)||0,hot=has&&r>=20;
- const ver=b.verification==="verified"?`<span class="seal" title="Verified: traded on live prices for 30 days">${SEAL}Verified</span>`:(b.verification==="running"||b.verification==="pending")?`<span class="badge">Verifying</span>`:`<span class="badge">Paper</span>`;
+ const sample=b.verification!=="verified"&&b.backtest?.result;
+ const has=b.trades>0&&!sample,r=Number(b.ret_90d)||0,hot=has&&r>=20;
+ const ver=b.verification==="verified"?`<span class="seal" title="Verified: traded on live prices for 30 days">${SEAL}Verified</span>`:(b.verification==="running"||b.verification==="pending")?`<span class="badge">Verifying</span>`:`<span class="badge">Not verified</span>`;
  const rating=b.review_count?`<span class="bot-dot"></span><span class="bot-stars"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 6.6 7.2.9-5.3 4.9 1.3 7.1L12 18l-6.2 3.5 1.3-7.1L1.8 9.5 9 8.6z"/></svg>${Number(b.avg_rating).toFixed(1)}</span>`:"";
  if(!has)return `<button class="bot card cold" data-id="${b.id}" role="listitem">
   <span class="bot-top"><span class="bot-tags">${ver}</span><span class="bot-score" style="--p:${Math.round(Number(b.creator_score)||0)}" title="Creator score"><b>${Math.round(Number(b.creator_score)||0)}</b></span></span>
@@ -94,7 +96,7 @@ async function setUser(u){me=u||null;prof=null;
  $("authBtn").textContent=me?"Sign out":"Sign in";$("acct").style.display=me?"flex":"none";if(me)bell();$("navAdmin").style.display=isStaff()?"":"none";const adminSheet=document.querySelector('#navSheet button[data-h="#/admin"]');if(adminSheet)adminSheet.style.display=isStaff()?"":"none";route()}
 async function attachBacktests(rows){
  const ids=(rows||[]).map(x=>x.id).filter(Boolean);if(!ids.length)return rows||[];
- const all=await q(sb.from("backtests").select("*").in("bot_id",ids).eq("state","done").order("created_at",{ascending:false}));
+ const all=await q(sb.from("bot_public_backtests").select("*").in("bot_id",ids).order("created_at",{ascending:false}));
  const latest=new Map();(all||[]).forEach(x=>{if(!latest.has(x.bot_id))latest.set(x.bot_id,x)});
  return (rows||[]).map(x=>({...x,backtest:latest.get(x.id)||null}));
 }
@@ -240,7 +242,7 @@ async function detail(id){
  <p class="note">Past results do not predict future returns. Use exchange keys with trading on and withdrawals off.</p>
  <button class="lnk" id="dReport" style="margin-top:14px">Report this bot</button>`}
  </aside></div>`;
- $("detail").showModal();$("dTitle").focus({preventScroll:true});$("dClose").onclick=()=>$("detail").close();const pcb=$("perfCardBtn");if(pcb)pcb.onclick=()=>downloadPerformanceCard(perf);loadCharts(id);
+ $("detail").showModal();$("dTitle").focus({preventScroll:true});$("dClose").onclick=()=>$("detail").close();const pcb=$("perfCardBtn");if(pcb)pcb.onclick=()=>downloadPerformanceCard(perf);loadCharts(id,rent?.id);
  const rb=$("dRent");if(rb)rb.onclick=async()=>{if(!me){$("detail").close();$("auth").showModal();return}
   if(on&&rent.stripe_subscription_id){await fn("cancel-rental",{rental_id:rent.id});toast("Ends at the end of the billing period");$("detail").close();return}
   if(!on&&cfg.payments_enabled==="true"&&b.price_cents>0){const r=await fn("rental-checkout",{bot_id:id});location.href=r.checkout_url;return}
@@ -513,9 +515,11 @@ function pickerInit(){const dl=$("uMData"),sel=$("uMSel"),srch=$("uMSearch");
  drawSel();fill()}
 
 const poly=(v,w,h,mn,mx)=>v.map((y,i)=>`${(i/(v.length-1)*w).toFixed(1)},${(h-4-(y-mn)/(mx-mn||1)*(h-8)).toFixed(1)}`).join(" ");
-async function loadCharts(id){
+async function loadCharts(id,rentalId=null){
  const el=$("eqChart");
- const eq=await q(sb.from("equity_snapshots").select("ts,equity").eq("bot_id",id).order("ts").limit(1500));
+ let eq=rentalId?await q(sb.from("rental_snapshots").select("ts,equity").eq("rental_id",rentalId).order("ts").limit(1500)):[];
+ const rentalCurve=eq.length>1;
+ if(!rentalCurve)eq=await q(sb.from("equity_snapshots").select("ts,equity").eq("bot_id",id).order("ts").limit(1500));
  if(el){
   if(eq.length>1){
    const v=eq.map(x=>+x.equity/+eq[0].equity*100);let pk=v[0],dd=0;const d=v.map(x=>{pk=Math.max(pk,x);const r=(x-pk)/pk*100;dd=Math.min(dd,r);return r});
@@ -602,13 +606,13 @@ window.rentalsView=async function renderRentalsView(){
  if(!prof){$("view").innerHTML='<div class="empty"><b>Sign in to see your rentals</b>Rentals, results and exchange keys live here.<div style="margin-top:14px"><button class="btn" id="needSign">Sign in</button></div></div>';$("needSign").onclick=()=>$("auth").showModal();return}
  const rs=await q(sb.from("rentals").select("*,bots(name,slug,verification,creator_id,profiles(handle,display_name,color))").eq("renter_id",prof.id).order("started_at",{ascending:false}));
  const keys=await q(sb.from("exchange_connections").select("id,label,key_hint,created_at"));
- const fl=rs.length?await q(sb.from("fills").select("rental_id,market,side,qty,price,realized_pnl,ts").in("rental_id",rs.map(r=>r.id)).order("ts",{ascending:false})):[];const eqs=rs.length?await q(sb.from("equity_snapshots").select("bot_id,ts,equity").in("bot_id",rs.map(r=>r.bot_id)).order("ts")):[];
+ const fl=rs.length?await q(sb.from("fills").select("rental_id,market,side,qty,price,realized_pnl,ts").in("rental_id",rs.map(r=>r.id)).order("ts",{ascending:false})):[];const eqs=rs.length?await q(sb.from("rental_snapshots").select("rental_id,ts,equity").in("rental_id",rs.map(r=>r.id)).order("ts")):[];
  $("view").innerHTML=`<div class="phead"><div><h1>My rentals</h1><p>Status, results and broker connections for every bot you rent.</p></div><a class="btn ghost" href="/#/market">Browse bots</a></div>
  ${rs.length?rs.map(r=>{const f=fl.filter(x=>x.rental_id===r.id),pnl=f.reduce((n,x)=>n+(+x.realized_pnl||0),0),ls=r.live_state||{},pos=Object.values(ls.pos||{}).filter(p=>p.qty>0).length,botName=r.bots?.name||"Unavailable bot",botSlug=r.bots?.slug,creator=r.bots?.profiles,creatorName=creator?.display_name||creator?.handle,creatorHandle=creator?.handle;
  return`<section class="post rental-card"><div class="row"><div><h3 style="font-size:19px">${botSlug?`<a href="/bots/${esc(botSlug)}" style="text-decoration:none">${esc(botName)}</a>`:esc(botName)}${creatorName?`<div class="note rental-uploader">Uploaded by <a class="lnk" href="/u/${esc(creatorHandle||creatorName)}">${esc(creatorName)}</a></div>`:""}</h3><div class="note" style="margin-top:6px">Rented ${new Date(r.started_at).toLocaleDateString()} · ${r.price_cents?`$${(r.price_cents/100).toFixed(2)} per ${r.billing_period}`:"free"}${r.cancel_at_period_end?" · ends at period end":""}</div></div><span class="badge ${r.live?"live":""}">${r.status==="cancelled"?"Cancelled":r.live?"Live":"Paper"}</span></div>
  ${r.paused_reason?`<p class="neg" style="margin-top:12px;font-weight:500">Stopped: ${esc(r.paused_reason)}</p>`:""}
  ${ls.cash!=null?`<div class="kpis sm" style="margin-top:16px"><div><b>${r.allocation_usd?"$"+num(r.allocation_usd,0):"Paper"}</b><span>Allocation</span></div><div><b>$${num(ls.cash,2)}</b><span>Cash</span></div><div><b>${pos}</b><span>Open position${pos===1?"":"s"}</span></div><div><b class="${pnl>=0?"pos":"neg"}">${pnl>=0?"+":"-"}$${Math.abs(pnl).toFixed(2)}</b><span>Realized profit, ${f.length} trades</span></div></div>`:""}
- ${(()=>{const curve=eqs.filter(x=>x.bot_id===r.bot_id),vals=curve.map(x=>+x.equity);const pts=vals.length>1?poly(vals.map(v=>v/(vals[0]||1)*100),520,110,Math.min(...vals.map(v=>v/(vals[0]||1)*100)),Math.max(...vals.map(v=>v/(vals[0]||1)*100))):"";return `<div class="rental-equity"><div class="row"><b>Equity curve</b><span class="note">${curve.length>1?curve.length+" snapshots":"Building"}</span></div>${pts?`<svg viewBox="0 0 520 110" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>`:`<div class="note">No equity history has been recorded for this rental yet.</div>`}</div>`})()}
+ ${(()=>{const curve=eqs.filter(x=>x.rental_id===r.id),vals=curve.map(x=>+x.equity);const pts=vals.length>1?poly(vals.map(v=>v/(vals[0]||1)*100),520,110,Math.min(...vals.map(v=>v/(vals[0]||1)*100)),Math.max(...vals.map(v=>v/(vals[0]||1)*100))):"";return `<div class="rental-equity"><div class="row"><b>Equity curve</b><span class="note">${curve.length>1?curve.length+" snapshots":"Building"}</span></div>${pts?`<svg viewBox="0 0 520 110" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>`:`<div class="note">Live rental equity begins after the broker worker records the first market snapshot. The sample backtest is not shown here.</div>`}</div>`})()}
  <details class="rental-trades"><summary class="btn ghost">View all trades (${f.length})</summary><div class="trade-history">${f.length?f.map(x=>`<div class="trade-row"><span>${new Date(x.ts).toLocaleString()}</span><b class="${x.side==="buy"?"pos":"neg"}">${esc(x.side||"trade")}</b><span>${esc(x.market||"—")}</span><span>${x.qty==null?"":Number(x.qty).toPrecision(6)} @ ${x.price==null?"":Number(x.price).toPrecision(8)}</span></div>`).join(""):'<div class="note">No trades yet.</div>'}</div></details>
  <div class="rental-actions">${r.live?`<button class="btn ghost" data-stop="${r.id}">Stop live trading</button>`:""}${r.status==="active"?`<button class="btn ghost" data-cancel="${r.id}">Cancel rental</button>`:""}</div></section>`}).join(""):'<div class="empty"><b>You are not renting any bots</b>Try one in paper mode first. It costs nothing and shows how the bot behaves.<div style="margin-top:14px"><a class="btn" href="/#/market">Browse the marketplace</a></div></div>'}
  <h2 class="sec-title">Broker connections</h2>${keys.length?keys.map(k=>`<div class="post row"><span><b>${esc(k.label)}</b> <span class="mute">account ending ${esc(k.key_hint)}, added ${new Date(k.created_at).toLocaleDateString()}</span></span><button class="btn ghost" data-delkey="${k.id}">Remove</button></div>`).join(""):'<div class="note">No broker connected. You can connect Alpaca from the page of a bot you rent.</div>'}

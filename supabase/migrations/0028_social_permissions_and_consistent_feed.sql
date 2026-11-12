@@ -1,5 +1,20 @@
--- Ensure social actions work on installations where earlier migrations were partial.
--- Safe to run repeatedly in Supabase SQL Editor.
+-- Complete social features for installations where earlier migrations were partial.
+create table if not exists comments(
+ id uuid primary key default gen_random_uuid(),
+ post_id uuid not null references posts on delete cascade,
+ author_id uuid not null references profiles on delete cascade,
+ body text not null check (char_length(body) between 1 and 280),
+ created_at timestamptz not null default now()
+);
+create index if not exists comments_post_created_idx on comments(post_id,created_at);
+alter table comments enable row level security;
+do $$ begin
+ drop policy if exists cm_read on comments; create policy cm_read on comments for select using (true);
+ drop policy if exists cm_ins on comments; create policy cm_ins on comments for insert to authenticated with check (author_id=auth.uid() and not coalesce((select is_banned from profiles where id=auth.uid()),false));
+ drop policy if exists cm_del on comments; create policy cm_del on comments for delete to authenticated using (author_id=auth.uid());
+end $$;
+grant select on comments to anon,authenticated;
+grant insert,delete on comments to authenticated;
 create table if not exists post_reposts(post_id uuid not null references posts on delete cascade,user_id uuid not null references profiles on delete cascade,created_at timestamptz not null default now(),primary key(post_id,user_id));
 create table if not exists post_bookmarks(post_id uuid not null references posts on delete cascade,user_id uuid not null references profiles on delete cascade,created_at timestamptz not null default now(),primary key(post_id,user_id));
 create table if not exists post_shares(post_id uuid not null references posts on delete cascade,user_id uuid not null references profiles on delete cascade,first_shared_at timestamptz not null default now(),primary key(post_id,user_id));
@@ -17,8 +32,4 @@ end $$;
 grant select on post_reposts,post_bookmarks,post_shares to authenticated;
 grant insert,delete on post_reposts,post_bookmarks to authenticated;
 grant insert on post_shares to authenticated;
--- The original comments migration omitted explicit grants on some projects.
-grant select on comments to anon,authenticated;
-grant insert on comments to authenticated;
-grant delete on comments to authenticated;
 notify pgrst,'reload schema';

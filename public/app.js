@@ -654,7 +654,7 @@ init2();
 async function comments(id,actionButton){const box=$("cm-"+id);if(!box)return;if(box.dataset.open){box.innerHTML="";delete box.dataset.open;return}box.dataset.open="1";
  const inputId="ci-"+id;box.innerHTML=`<div class="comment-list"><div class="note comment-loading">Loading comments…</div></div>${me?`<div class="two comment-compose"><input id="${inputId}" maxlength="280" placeholder="Write a comment"><button class="btn" id="cb-${id}">Send</button></div>`:""}`;
  const render=cs=>{const list=box.querySelector(".comment-list");if(list)list.innerHTML=cs.length?cs.map(c=>`<div class="rv"><b>${esc(c.profiles?.handle||"user")}</b> ${esc(c.body)}</div>`).join(""):'<div class="note">No comments yet.</div>'};
- void q(sb.from("comments").select("*,profiles(handle)").eq("post_id",id).order("created_at")).then(render);
+ void q(sb.from("comments").select("*,profiles(handle)").eq("post_id",id).order("created_at")).then(render).catch(e=>{const list=box.querySelector(".comment-list");if(list)list.innerHTML=`<div class="note neg">Comments unavailable: ${esc(e.message||"database setup required")}</div>`});
  const cb=$("cb-"+id);if(cb)cb.onclick=async()=>{const input=$(inputId),t=input?.value.trim();if(!t)return;cb.disabled=true;const temp=document.createElement("div");temp.className="rv comment-pending";temp.innerHTML=`<b>${esc(prof?.handle||"you")}</b> ${esc(t)}`;box.querySelector(".comment-list")?.append(temp);input.value="";actionState(actionButton,1);try{const r=await sb.from("comments").insert({post_id:id,author_id:me.id,body:t});if(r.error)throw r.error;temp.classList.remove("comment-pending")}catch(e){temp.remove();actionState(actionButton,-1);toast(e.message||"Could not post comment")}finally{cb.disabled=false}}}
 async function loadBookmarksPanel(panel){if(!panel||!me)return;panel.innerHTML='<div class="note">Loading bookmarks…</div>';try{
  const marks=await q(sb.from("post_bookmarks").select("post_id,created_at").eq("user_id",me.id).order("created_at",{ascending:false}));const ids=marks.map(x=>x.post_id);
@@ -712,6 +712,8 @@ async function adminExtra(){
   $("auOut").innerHTML=r.users.map(u=>`<div class="rv">${esc(u.handle)} · ${esc(u.email||"")} · ${u.is_banned?"banned":"active"} <button class="lnk" data-ban="${u.id}" data-to="${!u.is_banned}">${u.is_banned?"Unban":"Ban"}</button></div>`).join("")||'<div class="note">No match.</div>';
   document.querySelectorAll("[data-ban]").forEach(b=>b.onclick=async()=>{await q(sb.rpc("admin_set_ban",{target:b.dataset.ban,banned:b.dataset.to==="true"}));$("auGo").click()})}}
 
+let socialDelegationReady=false;
+function installSocialDelegation(){if(socialDelegationReady)return;socialDelegationReady=true;document.addEventListener("click",e=>{const b=e.target.closest("#view [data-cm],#view [data-repost],#view [data-like],#view [data-bookmark],#view [data-share]");if(!b||b.dataset.socialBusy)return;b.dataset.socialBusy="1";e.preventDefault();e.stopImmediatePropagation();const done=()=>{delete b.dataset.socialBusy};if(b.dataset.cm)comments(b.dataset.cm,b).finally(done);else if(b.dataset.repost)toggleRepost(b.dataset.repost,null,b).finally(done);else if(b.dataset.like)toggleLike(b.dataset.like,b).finally(done);else if(b.dataset.bookmark)toggleBookmark(b.dataset.bookmark,null,b).finally(done);else if(b.dataset.share)recordShare(b.dataset.share,null,b).finally(done)},true)}
 function init3(){
  $("supBtn").onclick=()=>me?$("support").showModal():$("auth").showModal();
  $("supCancel").onclick=()=>$("support").close();
@@ -719,6 +721,6 @@ function init3(){
  try{const sp=new URLSearchParams(location.search);if(sp.get("alpaca")){toast(sp.get("alpaca")==="ok"?"Alpaca connected. Open a bot you rent to start live trading.":(sp.get("msg")||"Alpaca connection failed"));history.replaceState(null,"",location.pathname+location.hash)}if(sp.get("kyc")==="done"||sp.get("verification")){toast(sp.get("kyc")?"Thanks. Your identity check is being reviewed.":sp.get("verification")==="paid"?"Payment received. Verification starts shortly.":"Checkout cancelled");history.replaceState(null,"",location.pathname+location.hash)}}catch{}
  try{if(!localStorage.getItem("relay_seen")){$("welcome").showModal();$("welcomeOk").onclick=()=>{$("welcome").close();localStorage.setItem("relay_seen","1")}}}catch{}
 }
-init3();
+init3();installSocialDelegation();
 
 }

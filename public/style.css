@@ -1151,3 +1151,16 @@ dialog[open]{display:block;animation:fade .18s ease}
 /* Final locked interaction icon sizing. */
 .post .x-actions .pact svg,.fpost .x-actions .pact svg{width:18px!important;height:18px!important;flex-basis:18px!important}.post .x-actions .x-action-tail .pact svg,.fpost .x-actions .x-action-tail .pact svg{width:19px!important;height:19px!important;flex-basis:19px!important}
 @media(max-width:620px){.post .x-actions .pact svg,.fpost .x-actions .pact svg{width:17px!important;height:17px!important;flex-basis:17px!important}.post .x-actions .x-action-tail .pact svg,.fpost .x-actions .x-action-tail .pact svg{width:18px!important;height:18px!important;flex-basis:18px!important}}
+
+/* Marketplace card polish: keep the Tick score numeral centered inside its dial. */
+.bot-score{overflow:hidden;place-items:center}
+.bot-score b{position:absolute;inset:0;display:grid;place-items:center;z-index:1;margin:0}
+.bot-score i{display:none!important}
+
+/* Prevent nested page overflow from producing a second scrollbar. */
+html,body{max-width:100%;overflow-x:hidden}
+main.wrap,#view,.botlist,.cards{min-width:0;max-width:100%}
+
+/* A short record can still have a meaningful curve; don't clip its endpoints. */
+.bot-spark{min-width:0;overflow:hidden}
+.bot-spark svg{overflow:hidden}

@@ -522,6 +522,12 @@ async function loadCharts(id,rentalId=null){
  let eq=rentalId?await q(sb.from("rental_snapshots").select("ts,equity").eq("rental_id",rentalId).order("ts").limit(1500)):[];
  const rentalCurve=eq.length>1;
  if(!rentalCurve)eq=await q(sb.from("equity_snapshots").select("ts,equity").eq("bot_id",id).order("ts").limit(1500));
+ // Public bot cards expose the sampled paper curve even when the detail-page
+ // RLS policy does not expose the underlying equity_snapshots rows.
+ if(!rentalCurve && eq.length<2){
+  const pub=await q(sb.from("bot_cards").select("spark").eq("id",id).maybeSingle());
+  if(Array.isArray(pub?.spark)&&pub.spark.length>1)eq=pub.spark.map((equity,i)=>({ts:Date.now()-((pub.spark.length-1-i)*86400000),equity:Number(equity)}));
+ }
  if(el){
   if(eq.length>1){
    const v=eq.map(x=>+x.equity/+eq[0].equity*100);let pk=v[0],dd=0;const d=v.map(x=>{pk=Math.max(pk,x);const r=(x-pk)/pk*100;dd=Math.min(dd,r);return r});

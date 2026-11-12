@@ -19,6 +19,7 @@ async function fn(name,body){const{data:{session}}=await sb.auth.getSession();if
  const j=await r.json().catch(()=>({}));if(!r.ok){const msg=j.error||`Request failed (${r.status})`;toast(msg);throw new Error(msg)}return j}
 async function report(type,id){const reason=prompt("What is wrong with this? (max 500 characters)");if(!reason||!me)return;await q(sb.from("reports").insert({reporter_id:me.id,target_type:type,target_id:id,reason:reason.slice(0,500)}));toast("Report sent")}
 async function q(p){const{data,error}=await p;if(error){toast(error.message);throw error}return data}
+(function installSocialClicks(){document.addEventListener("click",e=>{const b=e.target.closest("#view [data-cm],#view [data-repost],#view [data-like],#view [data-bookmark],#view [data-share]");if(!b||b.dataset.socialBusy)return;b.dataset.socialBusy="1";e.preventDefault();e.stopImmediatePropagation();const done=()=>{delete b.dataset.socialBusy};if(b.dataset.cm)comments(b.dataset.cm,b).finally(done);else if(b.dataset.repost)toggleRepost(b.dataset.repost,null,b).finally(done);else if(b.dataset.like)toggleLike(b.dataset.like,b).finally(done);else if(b.dataset.bookmark)toggleBookmark(b.dataset.bookmark,null,b).finally(done);else if(b.dataset.share)recordShare(b.dataset.share,null,b).finally(done)},true)})();
 const SEAL='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 1.8 3-.2 1 2.8 2.5 1.7-.9 2.9.9 2.9-2.5 1.7-1 2.8-3-.2L12 22l-2.4-1.8-3 .2-1-2.8-2.5-1.7.9-2.9-.9-2.9 2.5-1.7 1-2.8 3 .2z"/><path d="M8.5 12.2l2.5 2.5 4.5-5" fill="none" stroke="var(--seal-bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CHECK='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const av=(n,c,img)=>img?`<span class="av avatar-img" style="background-image:url(${esc(img)})" role="img" aria-label="${esc(n||"Profile photo")}"></span>`:`<span class="av" style="background:${esc(c||"#5b717a")}">${esc((n||"?")[0]).toUpperCase()}</span>`;
@@ -656,8 +657,8 @@ async function comments(id,actionButton){const box=$("cm-"+id);if(!box)return;if
  const render=cs=>{const list=box.querySelector(".comment-list");if(list)list.innerHTML=cs.length?cs.map(c=>`<div class="rv"><b>${esc(c.profiles?.handle||"user")}</b> ${esc(c.body)}</div>`).join(""):'<div class="note">No comments yet.</div>'};
  void q(sb.from("comments").select("*,profiles(handle)").eq("post_id",id).order("created_at")).then(render).catch(e=>{const list=box.querySelector(".comment-list");if(list)list.innerHTML=`<div class="note neg">Comments unavailable: ${esc(e.message||"database setup required")}</div>`});
  const cb=$("cb-"+id);if(cb)cb.onclick=async()=>{const input=$(inputId),t=input?.value.trim();if(!t)return;cb.disabled=true;const temp=document.createElement("div");temp.className="rv comment-pending";temp.innerHTML=`<b>${esc(prof?.handle||"you")}</b> ${esc(t)}`;box.querySelector(".comment-list")?.append(temp);input.value="";actionState(actionButton,1);try{const r=await sb.from("comments").insert({post_id:id,author_id:me.id,body:t});if(r.error)throw r.error;temp.classList.remove("comment-pending")}catch(e){temp.remove();actionState(actionButton,-1);toast(e.message||"Could not post comment")}finally{cb.disabled=false}}}
-async function loadBookmarksPanel(panel){if(!panel||!me)return;panel.innerHTML='<div class="note">Loading bookmarks…</div>';try{
- const marks=await q(sb.from("post_bookmarks").select("post_id,created_at").eq("user_id",me.id).order("created_at",{ascending:false}));const ids=marks.map(x=>x.post_id);
+async function loadBookmarksPanel(panel){const uid=me?.id||(await sb.auth.getUser()).data?.user?.id;if(!panel||!uid)return;panel.innerHTML='<div class="note">Loading bookmarks…</div>';try{
+ const marks=await q(sb.from("post_bookmarks").select("post_id,created_at").eq("user_id",uid).order("created_at",{ascending:false}));const ids=marks.map(x=>x.post_id);
  if(!ids.length){panel.innerHTML='<div class="note">You have no bookmarked posts yet.</div>';panel.dataset.loaded="1";return}
  const base=await q(sb.from("posts").select("id,author_id,body,system,created_at").in("id",ids));const authors=await q(sb.from("profiles").select("id,handle,display_name,color").in("id",[...new Set(base.map(x=>x.author_id))]));const byAuthor=new Map(authors.map(x=>[x.id,x]));
  // Merge the shared feed aggregates when the installed view exposes them, but never require that view for bookmarks.
@@ -712,8 +713,6 @@ async function adminExtra(){
   $("auOut").innerHTML=r.users.map(u=>`<div class="rv">${esc(u.handle)} · ${esc(u.email||"")} · ${u.is_banned?"banned":"active"} <button class="lnk" data-ban="${u.id}" data-to="${!u.is_banned}">${u.is_banned?"Unban":"Ban"}</button></div>`).join("")||'<div class="note">No match.</div>';
   document.querySelectorAll("[data-ban]").forEach(b=>b.onclick=async()=>{await q(sb.rpc("admin_set_ban",{target:b.dataset.ban,banned:b.dataset.to==="true"}));$("auGo").click()})}}
 
-let socialDelegationReady=false;
-function installSocialDelegation(){if(socialDelegationReady)return;socialDelegationReady=true;document.addEventListener("click",e=>{const b=e.target.closest("#view [data-cm],#view [data-repost],#view [data-like],#view [data-bookmark],#view [data-share]");if(!b||b.dataset.socialBusy)return;b.dataset.socialBusy="1";e.preventDefault();e.stopImmediatePropagation();const done=()=>{delete b.dataset.socialBusy};if(b.dataset.cm)comments(b.dataset.cm,b).finally(done);else if(b.dataset.repost)toggleRepost(b.dataset.repost,null,b).finally(done);else if(b.dataset.like)toggleLike(b.dataset.like,b).finally(done);else if(b.dataset.bookmark)toggleBookmark(b.dataset.bookmark,null,b).finally(done);else if(b.dataset.share)recordShare(b.dataset.share,null,b).finally(done)},true)}
 function init3(){
  $("supBtn").onclick=()=>me?$("support").showModal():$("auth").showModal();
  $("supCancel").onclick=()=>$("support").close();
@@ -721,6 +720,6 @@ function init3(){
  try{const sp=new URLSearchParams(location.search);if(sp.get("alpaca")){toast(sp.get("alpaca")==="ok"?"Alpaca connected. Open a bot you rent to start live trading.":(sp.get("msg")||"Alpaca connection failed"));history.replaceState(null,"",location.pathname+location.hash)}if(sp.get("kyc")==="done"||sp.get("verification")){toast(sp.get("kyc")?"Thanks. Your identity check is being reviewed.":sp.get("verification")==="paid"?"Payment received. Verification starts shortly.":"Checkout cancelled");history.replaceState(null,"",location.pathname+location.hash)}}catch{}
  try{if(!localStorage.getItem("relay_seen")){$("welcome").showModal();$("welcomeOk").onclick=()=>{$("welcome").close();localStorage.setItem("relay_seen","1")}}}catch{}
 }
-init3();installSocialDelegation();
+init3();
 
 }

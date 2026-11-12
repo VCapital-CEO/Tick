@@ -1183,3 +1183,7 @@ body:has(#detail[open]){overflow:hidden}
 .star-picker button:hover,.star-picker button.on{color:var(--lime);transform:translateY(-1px)}
 .star-picker button:focus-visible{outline:2px solid var(--lime);outline-offset:3px;border-radius:4px}
 @media(max-width:600px){.chart-context{display:block}.chart-context>span{display:block;margin-top:8px;text-align:left}.review-compose{display:block}.review-compose input{margin-top:12px;width:100%}}
+
+.review-owner-actions{display:inline-flex;align-items:center;gap:12px;margin-left:12px}
+.danger-link{color:var(--danger,#ff5370)!important}
+.danger-link:hover{color:#ff8093!important}

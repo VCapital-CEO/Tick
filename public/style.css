@@ -1187,3 +1187,9 @@ body:has(#detail[open]){overflow:hidden}
 .review-owner-actions{display:inline-flex;align-items:center;gap:12px;margin-left:12px}
 .danger-link{color:var(--danger,#ff5370)!important}
 .danger-link:hover{color:#ff8093!important}
+
+/* Immediate feedback for social actions while the database write completes. */
+.x-actions .action-pulse svg{animation:action-pop .22s ease}
+.x-actions .action-pulse{color:var(--lime)!important}
+@keyframes action-pop{50%{transform:scale(1.18)} }
+.comment-loading{padding:8px 0}.comment-pending{opacity:.62}.comment-compose{margin-top:8px;grid-template-columns:1fr auto}

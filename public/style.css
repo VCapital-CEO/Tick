@@ -1164,3 +1164,22 @@ main.wrap,#view,.botlist,.cards{min-width:0;max-width:100%}
 /* A short record can still have a meaningful curve; don't clip its endpoints. */
 .bot-spark{min-width:0;overflow:hidden}
 .bot-spark svg{overflow:hidden}
+
+/* Bot detail: only the detail surface scrolls while the modal is open. */
+body:has(#detail[open]){overflow:hidden}
+#detail{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+#detailBody{overflow:visible;min-width:0}
+
+/* Make the chart's meaning explicit instead of leaving the graph ambiguous. */
+.chart-context{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:10px}
+.chart-context h3{margin:0;font-size:20px;letter-spacing:-.035em}
+.chart-context p{margin:5px 0 0;color:var(--mute);font:11px/1.5 var(--mono);max-width:620px}
+.chart-context>span{flex:none;color:var(--accent);font:700 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;text-align:right}
+
+/* Five-star review control: direct click targets, no dropdown. */
+.review-compose{display:flex;align-items:center;gap:16px;margin-top:12px}
+.star-picker{display:flex;align-items:center;gap:3px;flex:none}
+.star-picker button{border:0;background:transparent;color:rgba(255,255,255,.22);font:900 29px/1 var(--sans);padding:2px;cursor:pointer;transition:color .14s,transform .14s}
+.star-picker button:hover,.star-picker button.on{color:var(--lime);transform:translateY(-1px)}
+.star-picker button:focus-visible{outline:2px solid var(--lime);outline-offset:3px;border-radius:4px}
+@media(max-width:600px){.chart-context{display:block}.chart-context>span{display:block;margin-top:8px;text-align:left}.review-compose{display:block}.review-compose input{margin-top:12px;width:100%}}

@@ -90,10 +90,11 @@ function card(b,o={}){
   <span class="bot-foot"><span class="bot-price ${b.price_cents?"":"free"}">${b.price_cents?`<b>$${(b.price_cents/100).toFixed(b.price_cents%100?0:0)}</b><span>/${b.billing_period==="week"?"wk":"mo"}</span>`:"<b>Free</b><span>paper</span>"}</span>${CTA}</span>
  </button>`}
 const skeleton=()=>`<div class="grid-skel" aria-hidden="true">${Array.from({length:6},()=>'<div class="skel"></div>').join("")}</div>`;
+async function refreshBell(){const el=$("bellN");if(!el)return;try{const{count,error}=await sb.from("notifications").select("id",{count:"exact",head:true}).eq("read",false);if(error){el.textContent="";return}el.textContent=count?(count>9?"9+":count):""}catch{el.textContent=""}}
 
 async function setUser(u){me=u||null;prof=null;
  if(me){const{data}=await sb.from("profiles").select("*").eq("id",me.id).maybeSingle();prof=data}
- $("authBtn").textContent=me?"Sign out":"Sign in";$("acct").style.display=me?"flex":"none";if(me)bell();$("navAdmin").style.display=isStaff()?"":"none";const adminSheet=document.querySelector('#navSheet button[data-h="#/admin"]');if(adminSheet)adminSheet.style.display=isStaff()?"":"none";route()}
+ $("authBtn").textContent=me?"Sign out":"Sign in";$("acct").style.display=me?"flex":"none";if(me)void refreshBell();$("navAdmin").style.display=isStaff()?"":"none";const adminSheet=document.querySelector('#navSheet button[data-h="#/admin"]');if(adminSheet)adminSheet.style.display=isStaff()?"":"none";route()}
 async function safeRows(query){const{data,error}=await query;return error?[]:(data||[])}
 async function attachBacktests(rows){
  const ids=(rows||[]).map(x=>x.id).filter(Boolean);if(!ids.length)return rows||[];
@@ -623,8 +624,7 @@ window.rentalsView=async function renderRentalsView(){
  const ib=$("invBtn");if(ib)ib.onclick=async()=>{const r=await fn("my-invoices",{});$("inv").innerHTML=(r.invoices||[]).map(i=>`<div class="rv">${new Date(i.created*1000).toLocaleDateString()}, ${esc(i.number||"invoice")}, ${(i.amount/100).toFixed(2)} ${String(i.currency).toUpperCase()}, ${esc(i.status)} ${i.url?`<a class="lnk" href="${esc(i.url)}" target="_blank" rel="noopener">View</a>`:""}</div>`).join("")||'<div class="note" style="margin-top:10px">No invoices yet.</div>'};
  document.querySelectorAll("[data-delkey]").forEach(b=>b.onclick=async()=>{await q(sb.from("exchange_connections").delete().eq("id",b.dataset.delkey));rentalsView()})}
 
-async function bell(){const{count}=await sb.from("notifications").select("id",{count:"exact",head:true}).eq("read",false);$("bellN").textContent=count?(count>9?"9+":count):""}
-setInterval(()=>{if(me)bell()},60000);
+setInterval(()=>{if(me)void refreshBell()},60000);
 function init2(){
  const searchDlg=$("userSearch"),searchInput=$("userSearchInput"),searchResults=$("userSearchResults"),searchBox=$("userSearchBox");
  searchBox.hidden=false;
@@ -632,7 +632,7 @@ function init2(){
  searchInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();e.stopPropagation();void runUserSearch()}});$("userSearchIconGo").addEventListener("click",e=>{e.preventDefault();void runUserSearch()});
  $("bellBtn").onclick=async()=>{const ns=await q(sb.from("notifications").select("*").order("created_at",{ascending:false}).limit(30));
   $("notifBody").innerHTML=ns.length?ns.map(n=>`<div class="rv" style="${n.read?"":"font-weight:600"}">${esc(n.body)}${n.link?` <a class="lnk" href="${esc(n.link)}">Open</a>`:""}<div class="note">${new Date(n.created_at).toLocaleString()}</div></div>`).join(""):'<div class="note">No alerts yet.</div>';
-  $("notif").showModal();if(ns.some(n=>!n.read)){await sb.from("notifications").update({read:true}).eq("read",false);bell()}};
+  $("notif").showModal();if(ns.some(n=>!n.read)){await sb.from("notifications").update({read:true}).eq("read",false);refreshBell()}};
  $("notifClose").onclick=()=>$('notif').close();$("setBtn").onclick=async()=>{mfaBox();kycBox();const{data}=await sb.from("profiles").select("email_alerts,display_name,bio,color").eq("id",me.id).single();if($("setEmail"))$("setEmail").checked=!!data?.email_alerts;if($("setName"))$("setName").value=data?.display_name||prof?.display_name||"";if($("setBio"))$("setBio").value=data?.bio||"";if($("setColor"))$("setColor").value=data?.color||"#D8FF3E";if($("setAvatar"))$("setAvatar").value="";$("settings").showModal()};$("setEmail").onchange=async()=>{await q(sb.from("profiles").update({email_alerts:$("setEmail").checked}).eq("id",me.id));toast("Saved")};$("setProfileSave").onclick=async()=>{const patch={display_name:$("setName")?.value.trim()||prof?.display_name,bio:$("setBio")?.value.trim()||"",color:$("setColor")?.value||prof?.color||"#5b717a"};await q(sb.from("profiles").update(patch).eq("id",me.id));Object.assign(prof,patch);toast("Profile saved");route()};$("setClose").onclick=()=>$('settings').close();const photoFile=$("photoFile"),photoMenu=$("photoMenu");document.addEventListener("click",e=>{const b=e.target.closest(".profile-photo-trigger");if(!b)return;const img=$("photoPreview");if(img){img.hidden=!prof?.avatar_url;if(prof?.avatar_url)img.src=prof.avatar_url}photoMenu?.showModal()});const photoView=$("photoView");if(photoView)photoView.onclick=()=>{if(prof?.avatar_url)window.open(prof.avatar_url,"_blank","noopener")};if(photoFile)photoFile.onchange=async()=>{const file=photoFile.files?.[0];if(!file)return;if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>2000000){toast("Use a PNG, JPG or WebP image under 2 MB");return}const path=`${me.id}/avatar-${Date.now()}.${file.type.split("/")[1].replace("jpeg","jpg")}`,up=await sb.storage.from("avatars").upload(path,file,{upsert:true,contentType:file.type});if(up.error){toast(up.error.message);return}const pub=sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;await q(sb.from("profiles").update({avatar_url:pub}).eq("id",me.id));prof.avatar_url=pub;photoMenu?.close();toast("Profile photo saved");route()};
  const newPass=async(id,done)=>{const p=$(id).value;if(p.length<8){toast("Use at least 8 characters");return}const{error}=await sb.auth.updateUser({password:p});if(error){toast(error.message);return}$(id).value="";done();toast("Password updated")};
  $("setPass").onclick=()=>newPass("setNew",()=>{});$("rGoPass").onclick=()=>newPass("rNew",()=>$("reset").close());

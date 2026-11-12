@@ -356,7 +356,7 @@ async function profile(handle){
   me&&!mine?sb.from("follows").select("followee_id").eq("follower_id",me.id).eq("followee_id",p.id):Promise.resolve({data:[]}),
   q(sb.from("follows").select("follower_id").eq("followee_id",p.id)),
   q(sb.from("follows").select("followee_id").eq("follower_id",p.id)),
-  q(sb.from("post_feed").select("id,author_id,body,created_at,likes,handle,display_name,color,avatar_url,system,media_url,media_type").eq("author_id",p.id).order("created_at",{ascending:false}).limit(30)),
+  q(sb.from("post_feed").select("id,author_id,body,created_at,likes,handle,display_name,color,system").eq("author_id",p.id).order("created_at",{ascending:false}).limit(30)),
   q(sb.from("bot_cards").select("*").eq("creator_id",p.id)),
   q(sb.from("reviews").select("*,profiles(handle),bots!inner(name,creator_id)").eq("bots.creator_id",p.id).order("created_at",{ascending:false}).limit(30))
  ]);

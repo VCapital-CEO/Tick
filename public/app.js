@@ -650,6 +650,7 @@ function init2(){
  $("setPass").onclick=()=>newPass("setNew",()=>{});$("rGoPass").onclick=()=>newPass("rNew",()=>$("reset").close());
  $("setDel").onclick=async()=>{if($("setConfirm").value!=="DELETE"){toast("Type DELETE to confirm");return}await fn("delete-account",{});await sb.auth.signOut();$("settings").close();toast("Account deleted")};
  $("aForgot").onclick=async()=>{const email=$("aEmail").value.trim();if(!email){toast("Enter your email first");return}const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin,captchaToken});if(window.turnstile&&CFG.turnstileKey){turnstile.reset();captchaToken=null}toast(error?error.message:"Check your email for a reset link")}}
+window.comments=comments;window.loadBookmarksPanel=loadBookmarksPanel;
 init2();
 
 async function comments(id,actionButton){const box=$("cm-"+id);if(!box)return;if(box.dataset.open){box.innerHTML="";delete box.dataset.open;return}box.dataset.open="1";
@@ -667,7 +668,6 @@ async function loadBookmarksPanel(panel){const uid=me?.id||(await sb.auth.getUse
  panel.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>comments(b.dataset.cm,b));panel.querySelectorAll("[data-like]").forEach(b=>b.onclick=()=>toggleLike(b.dataset.like,b));panel.querySelectorAll("[data-repost]").forEach(b=>b.onclick=()=>toggleRepost(b.dataset.repost,null,b));panel.querySelectorAll("[data-bookmark]").forEach(b=>b.onclick=()=>toggleBookmark(b.dataset.bookmark,null,b));panel.querySelectorAll("[data-share]").forEach(b=>b.onclick=()=>recordShare(b.dataset.share,null,b));panel.dataset.loaded="1";
  }catch(e){panel.innerHTML=`<div class="empty"><b>Bookmarks could not be loaded.</b><p class="note">${esc(e.message||"Try again shortly.")}</p><button class="btn ghost" data-retry-bookmarks>Try again</button></div>`;panel.querySelector("[data-retry-bookmarks]")?.addEventListener("click",()=>{delete panel.dataset.loaded;loadBookmarksPanel(panel)})}}
 
-window.comments=comments;window.loadBookmarksPanel=loadBookmarksPanel;
 let captchaToken=null;
 (function(){if(!CFG.turnstileKey)return;const s=document.createElement("script");s.src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";s.onload=()=>turnstile.render("#captcha",{sitekey:CFG.turnstileKey,callback:t=>{captchaToken=t}});document.head.appendChild(s)})();
 

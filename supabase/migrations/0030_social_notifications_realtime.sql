@@ -26,6 +26,7 @@ begin
   elsif tg_table_name='follows' then
     actor := new.follower_id; target := new.followee_id; kind := 'follow'; message := 'Someone followed you.'; link := '/#/community';
   end if;
+  if pid is not null then link := '/#/feed?post='||pid::text; end if;
   if target is not null and actor is not null and target<>actor then
     perform public.notify(target,kind,message,link);
   end if;

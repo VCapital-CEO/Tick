@@ -1193,3 +1193,6 @@ body:has(#detail[open]){overflow:hidden}
 .x-actions .action-pulse{color:var(--lime)!important}
 @keyframes action-pop{50%{transform:scale(1.18)} }
 .comment-loading{padding:8px 0}.comment-pending{opacity:.62}.comment-compose{margin-top:8px;grid-template-columns:1fr auto}
+
+/* Threaded comments and comment-level actions */
+.comment-list{display:grid;gap:10px;margin-top:12px}.comment-item{padding:12px 0;border-top:1px solid var(--line);position:relative}.comment-item.comment-reply{margin-left:34px;padding-left:14px;border-left:2px solid var(--line-2)}.comment-author{display:flex;align-items:center;gap:8px;font-size:12px}.comment-author .av{width:25px;height:25px;min-width:25px;font-size:10px}.comment-handle{display:block;color:var(--mute);font:10px var(--mono);margin-top:2px}.comment-body{margin:8px 0 7px 33px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.comment-actions{display:flex;align-items:center;gap:14px;margin-left:33px}.comment-action{border:0;background:transparent;color:var(--mute);font:11px var(--mono);padding:2px 0;cursor:pointer}.comment-action:hover,.comment-action.on{color:var(--lime)}.comment-reply-box{display:flex;gap:8px;margin:8px 0 0 33px}.comment-reply-box[hidden]{display:none}.comment-reply-box input{min-width:0;flex:1}

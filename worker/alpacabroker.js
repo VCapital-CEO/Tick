@@ -112,4 +112,4 @@ export async function oneAlpaca(h,db,r,ctx){
    const o=await order(sym,"sell",{qty:q},cid(r.id,slot,m,"sell"),tok);
    s.cash+=o.quote-o.fee;p.qty-=o.exec;await h.rec(db,r,m,"sell",o,(o.price-p.avg)*o.exec-o.fee);await h.save(db,r,s)}}
  for(const m of mk){const p=s.pos[m];if(p?.qty>0&&r.stop_loss_pct&&!p.stopId)await placeStop(alpSym(m),p,r.stop_loss_pct,prices[m],AS.get(alpSym(m)),tok,log)}
- s.slot=slot;s.errors=0;await h.save(db,r,s)}
+ s.slot=slot;s.errors=0;await h.recordRentalEquity(db,r,s,prices);await h.save(db,r,s)}

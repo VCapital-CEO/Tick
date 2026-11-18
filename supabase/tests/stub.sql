@@ -10,7 +10,7 @@ create table auth.mfa_factors(id uuid primary key default gen_random_uuid(), use
 create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$;
 create function auth.uid() returns uuid language sql stable as $$ select nullif(auth.jwt()->>'sub','')::uuid $$;
 create function auth.role() returns text language sql stable as $$ select auth.jwt()->>'role' $$;
-create table storage.buckets(id text primary key, name text, public boolean default false);
+create table storage.buckets(id text primary key, name text, public boolean default false, file_size_limit bigint, allowed_mime_types text[]);
 create table storage.objects(id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);
 alter table storage.objects enable row level security;
 create function storage.foldername(name text) returns text[] language sql immutable as $$
@@ -24,3 +24,4 @@ alter default privileges in schema public grant all on sequences to anon,authent
 alter default privileges in schema public grant all on functions to anon,authenticated,service_role;
 -- The embedded test Postgres has no citext; real Supabase does. Plain text stands in for it here.
 create domain public.citext as text;
+create publication supabase_realtime;

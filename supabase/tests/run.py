@@ -329,6 +329,66 @@ check("a ban removes the member", sup("select count(*) from group_members where 
 check("a banned user cannot rejoin", err(B, "insert into group_members(group_id,user_id) values(%s,%s)", (G, B)) is not None)
 check("a banned user cannot post in the group", err(B, "insert into posts(author_id,body,group_id) values(%s,'again',%s)", (B, G)) is not None)
 
+# ---- performance cards (every figure comes from backend records)
+R2 = sup("select id from rentals where bot_id=%s and renter_id=%s", (BOT, B))[0][0]
+sup("update rentals set status='active',live=false where id=%s", (R2,))
+sup("delete from rental_snapshots where rental_id=%s", (R2,))
+check("no card before any result is recorded", err(B, "select * from make_performance_card(%s)", (R2,)) is not None)
+sup("insert into rental_snapshots(rental_id,ts,equity) values(%s,date_trunc('hour',now())-interval '2 hours',10000),(%s,date_trunc('hour',now()),10100)", (R2, R2))
+sup("update rentals set paper_state=jsonb_build_object('cash',4000,'pos','{}'::jsonb,'slot',to_char(date_trunc('hour',now()) at time zone 'utc','YYYY-MM-DD\"T\"HH24:MI:SS.000\"Z\"')) where id=%s", (R2,))
+card = q(B, "select * from make_performance_card(%s)", (R2,))
+check("a renter can make a card for their own rental", len(card) == 1)
+row = sup("select initial,equity,cash,position_value,profit,roi,mode,kind from performance_cards where user_id=%s order by created_at desc limit 1", (B,))[0]
+check("card figures are calculated from the recorded account", tuple(map(str, row[:6])) == ("10000.00", "10100.00", "4000.00", "6100.00", "100.00", "1.00"))
+check("a paper rental's card says simulated", row[6] == "paper" and row[7] == "rental")
+check("others cannot make a card for someone else's rental", err(C, "select * from make_performance_card(%s)", (R2,)) is not None)
+check("the creator cannot make a card for a renter's rental", err(A, "select * from make_performance_card(%s)", (R2,)) is not None)
+check("a card must name exactly one rental or bot", err(B, "select * from make_performance_card(%s,%s)", (R2, BOT)) is not None and err(B, "select * from make_performance_card()") is not None)
+check("figures cannot be written directly", err(B, "insert into performance_cards(user_id,kind,bot_name,mode,initial,equity,cash,position_value,profit,roi,since,days) values(%s,'rental','x','paper',1,999999,0,999999,999998,99999800,now(),1)", (B,)) is not None)
+check("figures cannot be edited afterwards", err(B, "update performance_cards set profit=999999 where user_id=%s", (B,)) is not None)
+check("cards cannot be deleted by their owner", err(B, "delete from performance_cards where user_id=%s", (B,)) is not None)
+check("owners see their cards, others do not", len(q(B, "select 1 from performance_cards")) >= 1 and len(q(C, "select 1 from performance_cards")) == 0)
+cid = sup("select id from performance_cards where user_id=%s order by created_at desc limit 1", (B,))[0][0]
+ver = q(None, "select profit,roi,initial from card_verify(%s)", (str(cid),), role="anon")
+check("anyone can check a card by its ID", len(ver) == 1 and str(ver[0][0]) == "100.00")
+check("verifying exposes no user or rental IDs", "user_id" not in str(sup("select pg_get_function_result('card_verify(uuid)'::regprocedure)")) and "rental_id" not in str(sup("select pg_get_function_result('card_verify(uuid)'::regprocedure)")))
+check("an unknown ID verifies nothing", len(q(None, "select * from card_verify(gen_random_uuid())", role="anon")) == 0)
+sup("update rentals set paper_state=jsonb_set(paper_state,'{slot}','\"2020-01-01T00:00:00.000Z\"') where id=%s", (R2,))
+check("a card is refused while the account and snapshot disagree", err(B, "select * from make_performance_card(%s)", (R2,)) is not None)
+# live card: account value comes from the worker's recorded snapshots, cash from the live account state
+sup("alter table rentals disable trigger rentals_live")
+sup("update rentals set live=true,allocation_usd=500,live_state='{\"cash\":100}'::jsonb,started_at=now()-interval '3 hours' where id=%s", (R2,))
+sup("alter table rentals enable trigger rentals_live")
+sup("delete from rental_snapshots where rental_id=%s", (R2,))
+check("no live card before the worker has recorded a result", err(B, "select * from make_performance_card(%s)", (R2,)) is not None)
+sup("insert into rental_snapshots(rental_id,ts,equity) values(%s,date_trunc('hour',now())-interval '1 hour',505),(%s,date_trunc('hour',now()),520)", (R2, R2))
+q(B, "select * from make_performance_card(%s)", (R2,))
+row = sup("select mode,initial,equity,cash,position_value,profit,roi from performance_cards where user_id=%s order by created_at desc limit 1", (B,))[0]
+check("a live card uses the allocation and the recorded account value", (row[0],) + tuple(map(str, row[1:])) == ("live", "500.00", "520.00", "100.00", "420.00", "20.00", "4.00"))
+sup("update rentals set status='cancelled' where id=%s", (R2,))
+
+sup("update verification_runs set paper_state='{\"cash\":9000,\"pos\":{}}'::jsonb, created_at=now()+interval '1 hour' where id=(select run_id from equity_snapshots where bot_id=%s order by ts desc limit 1)", (BOT,))
+bc = q(A, "select * from make_performance_card(null,%s)", (BOT,))
+check("a creator can make a card for their own bot's simulated run", len(bc) == 1)
+check("a bot card is calculated from the run's records", sup("select initial,equity,cash,position_value,profit,kind from performance_cards where user_id=%s and kind='bot' order by created_at desc limit 1", (A,))[0] == (10000, 10000, 9000, 1000, 0, "bot"))
+check("only the creator can make a card for a bot", err(C, "select * from make_performance_card(null,%s)", (BOT,)) is not None and err(B, "select * from make_performance_card(null,%s)", (BOT,)) is not None)
+
+# ---- social privacy: bookmarks, views and shares belong to the person who made them
+PV = sup("insert into posts(author_id,body) values(%s,'privacy check post') returning id", (A,))[0][0]
+q(B, "insert into post_bookmarks(post_id,user_id) values(%s,%s)", (PV, B))
+q(B, "insert into post_impressions(post_id,user_id) values(%s,%s)", (PV, B))
+q(B, "insert into post_shares(post_id,user_id) values(%s,%s)", (PV, B))
+check("you can see your own bookmark, view and share", len(q(B, "select 1 from post_bookmarks where post_id=%s", (PV,))) == 1 and len(q(B, "select 1 from post_impressions where post_id=%s", (PV,))) == 1 and len(q(B, "select 1 from post_shares where post_id=%s", (PV,))) == 1)
+check("other users cannot see someone's bookmarks, views or shares", len(q(C, "select 1 from post_bookmarks where post_id=%s", (PV,))) == 0 and len(q(C, "select 1 from post_impressions where post_id=%s", (PV,))) == 0 and len(q(C, "select 1 from post_shares where post_id=%s", (PV,))) == 0)
+check("the post owner cannot see who bookmarked it", len(q(A, "select 1 from post_bookmarks where post_id=%s", (PV,))) == 0)
+check("signed-out visitors cannot read bookmarks, views or shares", all(err(None, f"select 1 from {t}", role="anon") is not None for t in ("post_bookmarks", "post_impressions", "post_shares")))
+check("public counts still include private actions", q(None, "select bookmarks,impressions,shares from post_feed where id=%s", (PV,), role="anon")[0] == (1, 1, 1))
+
+# ---- profile photo address must be our own storage
+check("a profile photo cannot point to an outside address", err(B, "update profiles set avatar_url='https://evil.example/x.png' where id=%s", (B,)) is not None)
+check("a profile photo cannot carry CSS or quotes", err(B, "update profiles set avatar_url='https://ygtdbboazcdsyfmzopfw.supabase.co/storage/v1/object/public/avatars/a/b.png);position:fixed' where id=%s", (B,)) is not None)
+check("a profile photo from our avatars bucket is accepted", err(B, "update profiles set avatar_url=%s where id=%s", ("https://ygtdbboazcdsyfmzopfw.supabase.co/storage/v1/object/public/avatars/" + B + "/pic.png", B)) is None)
+
 # ---- deleting an account
 sup("insert into payments(user_id,kind,amount_cents,provider,state) values(%s,'verification_fee',1500,'stripe','paid')", (B,))
 sup("insert into reports(reporter_id,target_type,target_id,reason) values(%s,'bot',%s,'x')", (B, BOT))

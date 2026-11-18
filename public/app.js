@@ -154,6 +154,7 @@ async function route0(){
  if(h[1]==="admin")return adminView();
  if(h[1]==="creator")return creatorView();
  if(h[1]==="rentals")return window.rentalsView();
+ if(h[1]==="card")return cardView(h[2]);
  if(h[1]==="u")return profile(h[2]);
  if(h[1]==="me"){if(!prof){$("view").innerHTML='<div class="empty">Sign in to see your profile.</div>';return}return profile(prof.handle)}
  if(h[1]==="market")return market();
@@ -580,7 +581,7 @@ async function creatorView(){
    ${s?`<div class="bp-stats"><div><b class="${s.ret_90d==null?"mute":s.ret_90d>=0?"pos":"neg"}">${s.ret_90d==null?"–":sgn(s.ret_90d)}</b><span>Return</span></div><div><b class="${s.max_dd==null?"mute":""}">${s.max_dd==null?"–":num(s.max_dd)+"%"}</b><span>Max drawdown</span></div><div><b>${s.trades||0}</b><span>Trades</span></div></div>`:'<p class="note" style="margin-bottom:14px">No record yet. A free paper run starts once your bot passes the code checks.</p>'}
    ${r?`<p class="note" style="margin-bottom:12px">Latest run: ${esc(r.state)}${r.result?.fails?.length?". "+esc(r.result.fails.join("; ")):""}${r.state==="running"?`, ends ${new Date(r.ends_at).toLocaleDateString()}`:""}</p>`:""}
    <div class="bp-backtest"><div class="bt-k">30-day backtest</div>${bt?(bt.state==="done"?`<p class="note" style="margin:0 0 10px">${bt.result.days} days, simulated: return ${num(bt.result.ret)}%, drawdown ${num(bt.result.dd)}%, Sharpe ${num(bt.result.sharpe,2)}, ${bt.result.trades} trades. Historical and not verified; beware overfitting.</p>${bt.result.consistent===false?`<p class="note neg" style="margin-bottom:10px">Warning: the second half did much worse than the first (${num(bt.result.halves.first.ret)}% vs ${num(bt.result.halves.second.ret)}%). This pattern often means overfitting.</p>`:""}<svg viewBox="0 0 300 56" preserveAspectRatio="none" style="width:100%;height:56px;display:block;margin-bottom:10px" aria-label="Backtest curve"><polyline points="${poly(bt.result.equity,300,56,Math.min(...bt.result.equity),Math.max(...bt.result.equity))}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`:bt.state==="failed"?`<p class="note neg">Backtest failed: ${esc(bt.error)}</p>`:`<p class="note">Backtest ${esc(bt.state)}. Check back in a minute.</p>`):'<p class="note" style="margin:0 0 10px">Test the bot on recent history before you pay for verification.</p>'}
-   ${v.length?`<button class="btn ghost btn-sm" data-bt="${b.id}">Run a 30-day backtest</button>`:""}</div>
+   ${v.length?`<button class="btn ghost btn-sm" data-bt="${b.id}">Run a 30-day backtest</button>`:""}<button class="btn ghost btn-sm" data-card-bot="${b.id}">Performance card</button></div>
   </div>
   <div class="bp-side">
    <div class="bp-price-row"><div><b>${b.price_cents?`$${(b.price_cents/100).toFixed(b.price_cents%100?2:0)}`:"Free"}</b><span class="n">per ${b.billing_period==="week"?"week":"month"}</span></div><div class="chips">${b.markets.slice(0,3).map(m=>`<span class="chip">${esc(m)}</span>`).join("")}${b.markets.length>3?`<span class="chip">+${b.markets.length-3}</span>`:""}</div></div>
@@ -597,10 +598,11 @@ async function creatorView(){
   </div>
  </div>
 </section>`}).join(""):'<div class="empty"><b>You have not listed a bot yet</b>List one, run a backtest, then verify it to earn the seal.</div>'}`;
- const metricValues={listed:bs.length,verified:bs.filter(b=>b.verification==="verified").length,renters:renters,gross:Number(gross.toFixed(0))},metricLabels={listed:"Bots listed",verified:"Verified",renters:"Active renters",gross:"Estimated monthly gross"};const drawMetric=(kind,days)=>{const val=Number(metricValues[kind]||0);$("metricTitle").textContent=kind==="gross"?"$"+val:val;$("metricLabel").textContent=metricLabels[kind];$("metricNote").textContent=metricLabels[kind]+" · "+days+" day view. Current snapshot; historical points will appear as the tracking job records them.";$("metricGraph").innerHTML='<div class="metric-empty">No historical snapshots yet. The graph will appear after Tick records this metric over time.</div>';document.querySelectorAll("[data-metric]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-metric]").forEach(x=>x.classList.toggle("active",x===b));drawMetric(b.dataset.metric,30)});document.querySelectorAll("[data-range]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-range]").forEach(x=>x.classList.toggle("on",x===b));drawMetric(document.querySelector("[data-metric].active")?.dataset.metric||"listed",b.dataset.range)});drawMetric("listed",30);
+ const metricValues={listed:bs.length,verified:bs.filter(b=>b.verification==="verified").length,renters:renters,gross:Number(gross.toFixed(0))},metricLabels={listed:"Bots listed",verified:"Verified",renters:"Active renters",gross:"Estimated monthly gross"};const drawMetric=(kind,days)=>{const val=Number(metricValues[kind]||0);$("metricTitle").textContent=kind==="gross"?"$"+val:val;$("metricLabel").textContent=metricLabels[kind];$("metricNote").textContent=metricLabels[kind]+" · "+days+" day view. Current snapshot; historical points will appear as the tracking job records them.";$("metricGraph").innerHTML='<div class="metric-empty">No historical snapshots yet. The graph will appear after Tick records this metric over time.</div>'};document.querySelectorAll("[data-metric]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-metric]").forEach(x=>x.classList.toggle("active",x===b));drawMetric(b.dataset.metric,30)});document.querySelectorAll("[data-range]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-range]").forEach(x=>x.classList.toggle("on",x===b));drawMetric(document.querySelector("[data-metric].active")?.dataset.metric||"listed",b.dataset.range)});drawMetric("listed",30);
  const eb=$("earnBtn");if(eb)eb.onclick=async()=>{const r=await fn("creator-earnings",{}),$$=x=>(x.amount/100).toFixed(2)+" "+String(x.currency).toUpperCase();
   $("earn").innerHTML=`<div class="note" style="margin-top:10px">Available ${(r.available||[]).map($$).join(", ")||"0"}. Pending ${(r.pending||[]).map($$).join(", ")||"0"}.</div>${(r.payouts||[]).map(p=>`<div class="rv">Payout ${$$(p)}, ${esc(p.status)}, ${new Date(p.arrival*1000).toLocaleDateString()}</div>`).join("")||'<div class="note">No payouts yet.</div>'}<details><summary class="note">Recent transactions</summary>${(r.transactions||[]).map(t=>`<div class="rv">${new Date(t.created*1000).toLocaleDateString()}, ${esc(t.type)}, net ${(t.net/100).toFixed(2)} (fee ${(t.fee/100).toFixed(2)})</div>`).join("")}</details>`};
  const cn=$("connBtn");if(cn)cn.onclick=async()=>{const r=await fn("connect-onboard",{});location.href=r.url};
+ document.querySelectorAll("[data-card-bot]").forEach(b=>b.onclick=()=>perfCard({bot:b.dataset.cardBot},b));
  document.querySelectorAll("[data-bt]").forEach(b=>b.onclick=async()=>{await q(sb.from("backtests").insert({bot_id:b.dataset.bt,creator_id:prof.id,days:30}));toast("Backtest queued");creatorView()});
  document.querySelectorAll("[data-verify]").forEach(b=>b.onclick=async()=>{
   if(b.disabled)return;
@@ -634,6 +636,137 @@ async function editCode(botId,name){
  $("ceCancel").onclick=()=>$("codeEdit").close();
  $("ceSave").onclick=async()=>{const t=$("ceText").value;$("codeEdit").close();await submitCode(botId,new File([t],"bot.py",{type:"text/x-python"}))}}
 
+const CARD_W=1200,CARD_H=630,CARD_SCALE=2;
+const cardUsd=(n,sign)=>{const v=Number(n),s=v<0?"-":(sign&&v>0?"+":"");return s+"$"+Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})};
+const cardPct=n=>{const v=Number(n);return(v>0?"+":v<0?"-":"")+Math.abs(v).toFixed(2)+"%"};
+const cardFit=(c,txt,max)=>{if(c.measureText(txt).width<=max)return txt;let t=txt;while(t.length>1&&c.measureText(t+"…").width>max)t=t.slice(0,-1);return t+"…"};
+const cardDate=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+const cardRound=(c,x,y,w,h,r)=>{c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()};
+
+async function cardFonts(){
+ try{await Promise.all([document.fonts.load('800 40px Archivo'),document.fonts.load('700 20px Archivo'),document.fonts.load('400 14px Archivo'),document.fonts.load('600 14px "JetBrains Mono"'),document.fonts.load('400 14px "JetBrains Mono"')])}catch{}
+}
+
+async function drawCard(card){
+ await cardFonts();
+ const cv=document.createElement("canvas");cv.width=CARD_W*CARD_SCALE;cv.height=CARD_H*CARD_SCALE;
+ const c=cv.getContext("2d");c.scale(CARD_SCALE,CARD_SCALE);
+ const roi=Number(card.roi),profit=Number(card.profit),up=profit>0,down=profit<0;
+ const INK="#F6F8FB",MUTE="#8D96A4",FAINT="#707A88",LIME="#D8FF3E",RED="#FF5C57";
+ const accent=down?RED:up?LIME:INK;
+ const hexA=(h,a)=>{const n=parseInt(h.slice(1),16);return`rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
+ const sans='Archivo, "Helvetica Neue", Arial, sans-serif',mono='"JetBrains Mono", ui-monospace, Menlo, monospace';
+ const spaced=(v)=>{try{c.letterSpacing=v}catch{}};
+
+ // background
+ c.fillStyle="#08090C";c.fillRect(0,0,CARD_W,CARD_H);
+ let g=c.createRadialGradient(1060,40,0,1060,40,560);g.addColorStop(0,hexA(accent==="#F6F8FB"?LIME:accent,.20));g.addColorStop(1,"rgba(8,9,12,0)");c.fillStyle=g;c.fillRect(0,0,CARD_W,CARD_H);
+ g=c.createRadialGradient(80,640,0,80,640,460);g.addColorStop(0,"rgba(255,255,255,.07)");g.addColorStop(1,"rgba(255,255,255,0)");c.fillStyle=g;c.fillRect(0,0,CARD_W,CARD_H);
+ c.strokeStyle="rgba(255,255,255,.04)";c.lineWidth=1;
+ for(let x=-CARD_H;x<CARD_W;x+=36){c.beginPath();c.moveTo(x,CARD_H);c.lineTo(x+CARD_H,0);c.stroke()}
+ cardRound(c,24,24,CARD_W-48,CARD_H-48,28);c.fillStyle="rgba(8,9,12,.55)";c.fill();c.strokeStyle="rgba(255,255,255,.11)";c.lineWidth=1.2;c.stroke();
+
+ // brand
+ c.save();c.translate(64,56);c.scale(1.25,1.25);c.strokeStyle=INK;c.fillStyle=INK;c.lineWidth=1.6;c.lineCap="round";
+ for(const[x1,y1,x2,y2]of[[5,2,5,7],[5,21,5,25],[17,7,17,11],[17,25,17,29],[29,1,29,5],[29,21,29,25]]){c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()}
+ cardRound(c,2,7,6,14,1.5);c.fill();cardRound(c,14,11,6,14,1.5);c.stroke();cardRound(c,26,5,6,16,1.5);c.fill();c.restore();
+ c.fillStyle=INK;c.font=`800 32px ${sans}`;c.textBaseline="alphabetic";spaced("-0.5px");c.fillText("Tick",116,86);spaced("0px");
+
+ // mode / verified badges, right-aligned
+ const badges=[card.mode==="live"?"LIVE":"SIMULATED · PAPER"];if(card.bot_verified)badges.push("VERIFIED BOT");
+ let bx=CARD_W-64;c.font=`600 14px ${mono}`;spaced("1.6px");
+ for(const t of badges.reverse()){const w=c.measureText(t).width+32;bx-=w;cardRound(c,bx,60,w,34,17);
+  c.fillStyle=t==="VERIFIED BOT"||t==="LIVE"?hexA(LIME,.14):"rgba(255,255,255,.06)";c.fill();c.strokeStyle=t==="VERIFIED BOT"||t==="LIVE"?hexA(LIME,.55):"rgba(255,255,255,.18)";c.lineWidth=1;c.stroke();
+  c.fillStyle=t==="VERIFIED BOT"||t==="LIVE"?LIME:INK;c.fillText(t,bx+16,82);bx-=10}
+ spaced("0px");
+
+ // bot name
+ c.fillStyle=INK;c.font=`700 46px ${sans}`;spaced("-0.8px");c.fillText(cardFit(c,card.bot_name,CARD_W-128),64,166);spaced("0px");
+ c.fillStyle=MUTE;c.font=`400 17px ${mono}`;
+ const who=card.handle?`by @${card.handle}  ·  `:"";
+ c.fillText(`${who}${cardDate(card.since)} – ${cardDate(card.created_at)}  ·  ${Number(card.days)<1?"under a day":Number(card.days).toFixed(1)+" days"} tracked`,64,198);
+
+ // hero: ROI
+ c.fillStyle=MUTE;c.font=`600 14px ${mono}`;spaced("2px");c.fillText("RETURN ON INVESTMENT",64,260);spaced("0px");
+ c.fillStyle=accent;c.font=`800 124px ${sans}`;spaced("-3px");c.shadowColor=hexA(accent==="#F6F8FB"?LIME:accent,.35);c.shadowBlur=36;
+ c.fillText(cardFit(c,cardPct(roi),600),60,368);c.shadowBlur=0;spaced("0px");
+ c.fillStyle=MUTE;c.font=`600 14px ${mono}`;spaced("2px");c.fillText("TOTAL PROFIT / LOSS",64,414);spaced("0px");
+ c.fillStyle=accent;c.font=`700 48px ${sans}`;spaced("-1px");c.fillText(cardUsd(profit,true),64,462);spaced("0px");
+
+ // equity curve from the recorded series
+ const s=(Array.isArray(card.series)?card.series:[]).map(Number).filter(Number.isFinite);
+ if(s.length>1){
+  const x0=690,x1=CARD_W-64,y0=250,y1=440,mn=Math.min(...s,Number(card.initial)),mx=Math.max(...s,Number(card.initial)),sp=(mx-mn)||1;
+  const X=i=>x0+(x1-x0)*i/(s.length-1),Y=v=>y1-(y1-y0)*(v-mn)/sp;
+  c.fillStyle=MUTE;c.font=`600 14px ${mono}`;spaced("2px");c.fillText("EQUITY SINCE START",x0,238);spaced("0px");
+  c.setLineDash([4,6]);c.strokeStyle="rgba(255,255,255,.22)";c.lineWidth=1;c.beginPath();c.moveTo(x0,Y(Number(card.initial)));c.lineTo(x1,Y(Number(card.initial)));c.stroke();c.setLineDash([]);
+  const f=c.createLinearGradient(0,y0,0,y1);f.addColorStop(0,hexA(accent==="#F6F8FB"?LIME:accent,.30));f.addColorStop(1,hexA(accent==="#F6F8FB"?LIME:accent,0));
+  c.beginPath();s.forEach((v,i)=>i?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v)));c.lineTo(x1,y1);c.lineTo(x0,y1);c.closePath();c.fillStyle=f;c.fill();
+  c.beginPath();s.forEach((v,i)=>i?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v)));c.strokeStyle=accent;c.lineWidth=3;c.lineJoin="round";c.stroke();
+  c.beginPath();c.arc(X(s.length-1),Y(s[s.length-1]),6,0,7);c.fillStyle=accent;c.fill();c.strokeStyle="#08090C";c.lineWidth=3;c.stroke();
+ }
+
+ // figures
+ c.strokeStyle="rgba(255,255,255,.12)";c.lineWidth=1;c.beginPath();c.moveTo(64,484);c.lineTo(CARD_W-64,484);c.stroke();
+ const col=(CARD_W-128)/3;
+ [["INITIAL INVESTMENT",cardUsd(card.initial)],["CURRENT POSITION VALUE",cardUsd(card.position_value)],["ACCOUNT VALUE",cardUsd(card.equity)]].forEach(([l,v],i)=>{
+  const x=64+i*col;c.fillStyle=MUTE;c.font=`600 13px ${mono}`;spaced("1.6px");c.fillText(l,x,516);spaced("0px");
+  c.fillStyle=INK;c.font=`700 34px ${sans}`;spaced("-0.6px");c.fillText(v,x,556);spaced("0px")});
+
+ // footer: how to check it, and the honest label
+ c.fillStyle=FAINT;c.font=`400 12px ${mono}`;
+ c.fillText(`Check this card: ${location.host}/#/card/${card.id}`,64,590);
+ c.textAlign="right";c.font=`400 12px ${sans}`;
+ c.fillText(card.mode==="live"?"Past performance does not guarantee future results.":"Simulated with pretend funds. Not a guarantee of future results.",CARD_W-64,590);c.textAlign="left";
+ return cv;
+}
+
+function cardDialog(){
+ let d=document.getElementById("cardDlg");if(d)return d;
+ d=document.createElement("dialog");d.id="cardDlg";d.setAttribute("aria-label","Performance card");
+ d.innerHTML='<div class="dlg" style="max-width:min(920px,94vw)"><h2>Performance card</h2><img id="cardImg" alt="" style="width:100%;height:auto;border-radius:14px;display:block;border:1px solid var(--line,rgba(255,255,255,.12))"><p class="note" id="cardNote" style="margin-top:10px"></p><div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="cardCopy">Copy check link</button><button class="btn ghost" id="cardShare" hidden>Share</button><a class="btn" id="cardDl" download>Download PNG</a><button class="btn ghost" id="cardClose">Close</button></div></div>';
+ document.body.appendChild(d);d.querySelector("#cardClose").onclick=()=>d.close();return d;
+}
+
+async function showCard(card){
+ const cv=await drawCard(card),d=cardDialog(),img=d.querySelector("#cardImg"),dl=d.querySelector("#cardDl");
+ const url=`${location.origin}/#/card/${card.id}`;
+ img.src=cv.toDataURL("image/png");img.alt=`${card.bot_name} performance card: ${cardPct(card.roi)} return`;
+ const blob=await new Promise(r=>cv.toBlob(r,"image/png")),name=`tick-${String(card.bot_name).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"bot"}-${String(card.id).slice(0,8)}.png`;
+ if(dl.dataset.u)URL.revokeObjectURL(dl.dataset.u);dl.dataset.u=URL.createObjectURL(blob);dl.href=dl.dataset.u;dl.download=name;
+ d.querySelector("#cardNote").textContent=card.mode==="live"?"Figures are Tick's record of your live account at the moment this card was made.":"Figures are from your simulated account, which uses pretend funds. They come from Tick's records and cannot be edited.";
+ d.querySelector("#cardCopy").onclick=async()=>{try{await navigator.clipboard.writeText(url);toast("Link copied")}catch{toast(url)}};
+ const sh=d.querySelector("#cardShare"),file=new File([blob],name,{type:"image/png"});
+ sh.hidden=!(navigator.canShare&&navigator.canShare({files:[file]}));sh.onclick=()=>navigator.share({files:[file],title:`${card.bot_name} on Tick`,url}).catch(()=>{});
+ if(!d.open)d.showModal();
+}
+
+async function perfCard(opts,btn){
+ if(!prof){$("auth").showModal();return}
+ const old=btn&&btn.textContent;if(btn){btn.disabled=true;btn.textContent="Preparing…"}
+ try{
+  const{data,error}=await sb.rpc("make_performance_card",{p_rental:opts.rental||null,p_bot:opts.bot||null});
+  if(error)throw error;
+  await showCard(Array.isArray(data)?data[0]:data);
+ }catch(e){toast(e.message||"Could not make the card")}
+ finally{if(btn){btn.disabled=false;btn.textContent=old}}
+}
+
+// /#/card/<id>: anyone can see the figures Tick recorded for a card
+async function cardView(id){
+ const v=$("view");
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id||"")){v.innerHTML='<div class="empty"><b>Card not found</b>That link is not a valid card.</div>';return}
+ const{data,error}=await sb.rpc("card_verify",{p_id:id});
+ const r=Array.isArray(data)?data[0]:data;
+ if(error||!r){v.innerHTML='<div class="empty"><b>No card with this ID</b>Tick has no record of it, so the image is not one Tick made.</div>';return}
+ const card={...r,id},cv=await drawCard(card);
+ v.innerHTML=`<div class="phead"><div><h1>Performance card</h1><p>${esc(r.bot_name)}${r.handle?` by @${esc(r.handle)}`:""}. Tick recorded this card on ${new Date(r.created_at).toLocaleString()}.</p></div></div>
+ <section class="post"><img alt="${esc(r.bot_name)} performance card" style="width:100%;height:auto;border-radius:14px;display:block" src="${cv.toDataURL("image/png")}">
+ <div class="kpis sm" style="margin-top:16px"><div><b>${esc(cardUsd(r.initial))}</b><span>Initial investment</span></div><div><b>${esc(cardUsd(r.position_value))}</b><span>Current position value</span></div><div><b class="${Number(r.profit)>=0?"pos":"neg"}">${esc(cardUsd(r.profit,true))}</b><span>Profit / loss</span></div><div><b class="${Number(r.roi)>=0?"pos":"neg"}">${esc(cardPct(r.roi))}</b><span>ROI</span></div></div>
+ <p class="note" style="margin-top:12px">${r.mode==="live"?"Live account":"Simulated account with pretend funds"}. If a card image you were sent shows different figures from this page, the image was changed.</p></section>`;
+}
+
+
 window.rentalsView=async function renderRentalsView(){
  const seq=window.__navSeq;
  if(!prof){$("view").innerHTML='<div class="empty"><b>Sign in to see your rentals</b>Rentals, results and exchange keys live here.<div style="margin-top:14px"><button class="btn" id="needSign">Sign in</button></div></div>';$("needSign").onclick=()=>$("auth").showModal();return}
@@ -647,10 +780,11 @@ window.rentalsView=async function renderRentalsView(){
  ${ls.cash!=null?`<div class="kpis sm" style="margin-top:16px"><div><b>${r.allocation_usd?"$"+num(r.allocation_usd,0):"Paper"}</b><span>Allocation</span></div><div><b>$${num(ls.cash,2)}</b><span>Cash</span></div><div><b>${pos}</b><span>Open position${pos===1?"":"s"}</span></div><div><b class="${pnl>=0?"pos":"neg"}">${pnl>=0?"+":"-"}$${Math.abs(pnl).toFixed(2)}</b><span>Realized profit, ${f.length} trades</span></div></div>`:""}
  ${(()=>{const curve=eqs.filter(x=>x.rental_id===r.id),vals=curve.map(x=>+x.equity);const pts=vals.length>1?poly(vals.map(v=>v/(vals[0]||1)*100),520,110,Math.min(...vals.map(v=>v/(vals[0]||1)*100)),Math.max(...vals.map(v=>v/(vals[0]||1)*100))):"";return `<div class="rental-equity"><div class="row"><b>Equity curve</b><span class="note">${curve.length>1?curve.length+" snapshots":"Building"}</span></div>${pts?`<svg viewBox="0 0 520 110" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>`:`<div class="note">Live rental equity begins after the broker worker records the first market snapshot. The sample backtest is not shown here.</div>`}</div>`})()}
  <details class="rental-trades"><summary class="btn ghost">View all trades (${f.length})</summary><div class="trade-history">${f.length?f.map(x=>`<div class="trade-row"><span>${new Date(x.ts).toLocaleString()}</span><b class="${x.side==="buy"?"pos":"neg"}">${esc(x.side||"trade")}</b><span>${esc(x.market||"—")}</span><span>${x.qty==null?"":Number(x.qty).toPrecision(6)} @ ${x.price==null?"":Number(x.price).toPrecision(8)}</span></div>`).join(""):'<div class="note">No trades yet.</div>'}</div></details>
- <div class="rental-actions">${r.live?`<button class="btn ghost" data-stop="${r.id}">Stop live trading</button>`:""}${r.status==="active"?`<button class="btn ghost" data-cancel="${r.id}">Cancel rental</button>`:""}</div></section>`}).join(""):'<div class="empty"><b>You are not renting any bots</b>Try one in paper mode first. It costs nothing and shows how the bot behaves.<div style="margin-top:14px"><a class="btn" href="/#/market">Browse the marketplace</a></div></div>'}
+ <div class="rental-actions"><button class="btn ghost" data-card="${r.id}">Performance card</button>${r.live?`<button class="btn ghost" data-stop="${r.id}">Stop live trading</button>`:""}${r.status==="active"?`<button class="btn ghost" data-cancel="${r.id}">Cancel rental</button>`:""}</div></section>`}).join(""):'<div class="empty"><b>You are not renting any bots</b>Try one in paper mode first. It costs nothing and shows how the bot behaves.<div style="margin-top:14px"><a class="btn" href="/#/market">Browse the marketplace</a></div></div>'}
  <h2 class="sec-title">Broker connections</h2>${keys.length?keys.map(k=>`<div class="post row"><span><b>${esc(k.label)}</b> <span class="mute">account ending ${esc(k.key_hint)}, added ${new Date(k.created_at).toLocaleDateString()}</span></span><button class="btn ghost" data-delkey="${k.id}">Remove</button></div>`).join(""):'<div class="note">No broker connected. You can connect Alpaca from the page of a bot you rent.</div>'}
  <h2 class="sec-title">Invoices</h2><button class="btn ghost" id="invBtn">Show invoices</button><div id="inv"></div>`;
- document.querySelectorAll("[data-stop]").forEach(b=>b.onclick=async()=>{await q(sb.from("rentals").update({live:false}).eq("id",b.dataset.stop));toast("Stopping. Positions are sold within 10 minutes");renderRentalsView()});
+ document.querySelectorAll("[data-card]").forEach(b=>b.onclick=()=>perfCard({rental:b.dataset.card},b));
+  document.querySelectorAll("[data-stop]").forEach(b=>b.onclick=async()=>{await q(sb.from("rentals").update({live:false}).eq("id",b.dataset.stop));toast("Stopping. Positions are sold within 10 minutes");renderRentalsView()});
  document.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=async()=>{if(!confirm("Cancel this rental? Any live positions will be sold."))return;const rr=rs.find(x=>x.id===b.dataset.cancel);if(rr.stripe_subscription_id){await fn("cancel-rental",{rental_id:rr.id});toast("Ends at the end of the billing period")}else await q(sb.from("rentals").update({status:"cancelled",live:false}).eq("id",rr.id));renderRentalsView()});
  const ib=$("invBtn");if(ib)ib.onclick=async()=>{const r=await fn("my-invoices",{});$("inv").innerHTML=(r.invoices||[]).map(i=>`<div class="rv">${new Date(i.created*1000).toLocaleDateString()}, ${esc(i.number||"invoice")}, ${(i.amount/100).toFixed(2)} ${String(i.currency).toUpperCase()}, ${esc(i.status)} ${i.url?`<a class="lnk" href="${esc(i.url)}" target="_blank" rel="noopener">View</a>`:""}</div>`).join("")||'<div class="note" style="margin-top:10px">No invoices yet.</div>'};
  document.querySelectorAll("[data-delkey]").forEach(b=>b.onclick=async()=>{await q(sb.from("exchange_connections").delete().eq("id",b.dataset.delkey));rentalsView()})}
@@ -723,5 +857,3 @@ function init3(){
  try{if(!localStorage.getItem("relay_seen")){$("welcome").showModal();$("welcomeOk").onclick=()=>{$("welcome").close();localStorage.setItem("relay_seen","1")}}}catch{}
 }
 init3();
-
-}

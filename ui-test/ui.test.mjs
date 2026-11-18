@@ -9,7 +9,7 @@ const html=readFileSync(new URL("index.html",ROOT),"utf8").replace(/<script[\s\S
 const appJs=readFileSync(new URL("app.js",ROOT),"utf8");
 
 const wins=[];afterEach(()=>{wins.splice(0).forEach(w=>w.close())});
-const USER={id:"u-me",email:"me@example.test"};
+const USER={id:"u-me",email:"innovationwithwesley@gmail.com"};
 const bot=(i,o={})=>({id:"b"+i,slug:"bot-"+i,name:"Bot "+i,description:"desc",strategy:"trend",markets:["BTC/USDT","ETH/USDT","SOL/USDT","DOGE/USDT","XRP/USDT"],price_cents:4900,billing_period:"month",verification:"verified",
  created_at:new Date().toISOString(),creator_id:i===1?"u-me":"u-other",creator_handle:i===1?"me_1":"other_1",creator_name:"Other",creator_color:"#123456",creator_score:80,
  ret_90d:12.3,max_dd:4.5,sharpe:1.2,win_rate:55,trades:40,days_live:35,avg_rating:4.5,review_count:2,...o});
@@ -36,7 +36,8 @@ const DATA={
  audit_log:[{action:"ban x",created_at:new Date().toISOString()}],
  reports:[{id:"rp1",target_type:"bot",target_id:"b2",reason:"bad",created_at:new Date().toISOString()}],
  posts:[{id:"p1",body:"hello world"}]};
-const RPC={my_bot_rentals:[{bot_id:"b1",active:2,live:1}],admin_stats:{users:5,bots:2,live:1,beat:new Date().toISOString(),live_enabled:"true"}};
+const CARD={id:"3f2a9c1e-7b44-4d0a-9a51-0c6e2b8d41aa",bot_name:"Bot 1",handle:"creator",mode:"paper",bot_verified:false,initial:10000,equity:11234.56,position_value:6100.12,profit:1234.56,roi:12.35,since:"2026-11-02T01:00:00Z",created_at:"2026-11-10T04:00:00Z",days:8.1,series:[10000,10400,11234.56]};
+const RPC={make_performance_card:CARD,card_verify:[CARD],my_bot_rentals:[{bot_id:"b1",active:2,live:1}],admin_stats:{users:5,bots:2,live:1,beat:new Date().toISOString(),live_enabled:"true"}};
 
 function builder(table,rpc){
  let single=false;
@@ -47,7 +48,8 @@ function builder(table,rpc){
   return()=>b}});
  return b}
 function makeClient(session){
- return{from:t=>builder(t),rpc:n=>builder(n,true),
+ const chan=()=>{const c={on:()=>c,subscribe:()=>c,unsubscribe:()=>c};return c};
+ return{channel:chan,removeChannel:()=>{},from:t=>builder(t),rpc:(n,a)=>{(globalThis.__rpc??=[]).push([n,a]);return builder(n,true)},
   storage:{from:()=>({upload:async()=>({data:{},error:null})})},
   auth:{getSession:async()=>({data:{session}}),onAuthStateChange:cb=>{setTimeout(()=>cb("INITIAL_SESSION",session),0);return{data:{subscription:{}}}},
    signInWithPassword:async()=>({error:null}),signUp:async()=>({error:null}),signOut:async()=>({}),updateUser:async()=>({error:null}),resetPasswordForEmail:async()=>({error:null}),
@@ -85,7 +87,7 @@ test("feed, comments, creator dashboard, rentals, profile and admin render witho
  await t.go("#/feed");assert.match(t.view(),/hello world/);t.$("[data-cm]").click();await t.wait(100);assert.match(t.view(),/nice/);
  await t.go("#/creator");assert.match(t.view(),/My bots/);assert.match(t.view(),/backtest/i);assert.match(t.view(),/overfitting/);assert.match(t.view(),/Payouts are active/);
  await t.go("#/rentals");assert.match(t.view(),/Bot 2/);assert.match(t.view(),/Live/);assert.match(t.view(),/broker connections/);
- await t.go("#/me");assert.match(t.view(),/Tick score/);assert.match(t.view(),/Save profile/);
+ await t.go("#/me");assert.match(t.view(),/Tick score/);assert.match(t.view(),/Bots/);
  await t.go("#/admin");assert.match(t.view(),/Moderation/);assert.match(t.view(),/Worker/);assert.match(t.view(),/Support tickets/);assert.match(t.view(),/Similar-code/);assert.match(t.view(),/boom/);
  t.w.close();assert.deepEqual(t.errors,[])});
 
@@ -112,7 +114,7 @@ test("hero shows the featured verified record and rows show sparklines and the s
 
 test("community page shows the leaderboard and system posts",async()=>{
  const t=await boot(true);await t.go("#/feed");
- assert.match(t.view(),/Top creators/);assert.match(t.view(),/Community/);assert.equal(t.errors.length,0)});
+ assert.match(t.view(),/Top creators/);assert.match(t.view(),/Updates from creators/);assert.equal(t.errors.length,0)});
 
 test("upload requirements accept a real bot and reject files that are not trading bots",async()=>{
  const t=await boot(false),req=t.w.tickReq,failed=(n,s,txt)=>Array.from(req(n,s,txt)).filter(c=>!c.ok).map(c=>c.id);
@@ -127,3 +129,22 @@ test("upload requirements accept a real bot and reject files that are not tradin
  assert.ok(failed("bot.py",20,"\u0000\u0001binary").includes("text"));
  assert.ok(failed("bot.py",30,"def decide(candles):\n    return {}\n").includes("decide"));
  assert.deepEqual(t.errors,[]);t.w.close()});
+
+const stubCanvas=w=>{const ctx=new Proxy(function(){},{get:(_,k)=>k==="measureText"?()=>({width:10}):(()=>ctx),set:()=>true});
+ w.HTMLCanvasElement.prototype.getContext=()=>ctx;w.HTMLCanvasElement.prototype.toDataURL=()=>"data:image/png;base64,AA=="};
+
+test("rentals and bots offer a performance card that asks the database for the figures",async()=>{
+ const t=await boot(true);stubCanvas(t.w);globalThis.__rpc=[];
+ await t.go("#/rentals");const b=t.$("[data-card]");assert.ok(b,"rental card button missing");
+ b.click();await t.wait(200);
+ const call=globalThis.__rpc.find(c=>c[0]==="make_performance_card");
+ assert.ok(call&&call[1].p_rental&&call[1].p_bot===null,"card must be requested from the database for the rental");
+ await t.go("#/creator");assert.ok(t.$("[data-card-bot]"),"bot card button missing");
+ t.$("[data-card-bot]").click();await t.wait(200);
+ assert.ok(globalThis.__rpc.some(c=>c[0]==="make_performance_card"&&c[1].p_bot&&c[1].p_rental===null),"bot card must be requested from the database")});
+
+test("a card can be checked by its ID, and a bad ID is refused",async()=>{
+ const t=await boot(false);stubCanvas(t.w);
+ await t.go("#/card/3f2a9c1e-7b44-4d0a-9a51-0c6e2b8d41aa");
+ assert.match(t.view(),/Performance card/);assert.match(t.view(),/\$10,000\.00/);assert.match(t.view(),/\+\$1,234\.56/);assert.match(t.view(),/\+12\.35%/);
+ await t.go("#/card/not-an-id");assert.match(t.view(),/Card not found/)});

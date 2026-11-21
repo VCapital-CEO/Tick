@@ -1211,3 +1211,21 @@ body:has(#detail[open]){overflow:hidden}
 /* Bell notifications are a non-modal, scrollable dropdown rather than a full-screen dialog. */
 #notif{position:fixed;z-index:100;inset:64px 18px auto auto;width:auto;height:auto;max-width:calc(100vw - 24px);max-height:none;overflow:visible}#notif::backdrop{background:transparent;backdrop-filter:none}#notif .dlg{width:min(390px,calc(100vw - 24px));max-height:min(68vh,560px);margin:0;padding:16px;overflow:auto;border-radius:14px;box-shadow:0 22px 60px rgba(0,0,0,.58)}#notif .dlg h2{font-size:16px;margin-bottom:12px}#notifBody{max-height:50vh;overflow:auto;padding-right:3px}#notifBody .rv{padding:10px 2px;border-bottom:1px solid var(--line)}#notifBody .rv:last-child{border-bottom:0}
 @media(max-width:600px){#notif{inset:58px 10px auto auto}#notif .dlg{width:min(360px,calc(100vw - 20px));max-height:70vh}}
+
+/* ---- UI audit fixes ---- */
+:root{--faint:#7B8594} /* small grey text now passes 4.5:1 on the dark surfaces */
+@media(max-width:820px){
+ /* signed in on a phone: the header used to overflow, hiding the account button and dropping the search box under the bar */
+ body.signed-in #authBtn{display:none}
+ .top-in{gap:10px}
+ .top-end{min-width:0}
+ .top-end #userSearch{width:min(150px,36vw)!important}
+ .top-end #userSearch .user-search-row{flex-direction:row!important;align-items:center!important;height:36px!important}
+}
+.rental-actions{flex-wrap:wrap}
+@media(max-width:620px){.rental-actions{justify-content:stretch}.rental-actions .btn{flex:1 1 calc(50% - 10px);text-align:center}}
+@media(pointer:coarse){
+ .btn-sm,.pact,.tab-btn,.creator-kpi,.chip,.brand{min-height:40px}
+ .pact{min-width:40px;justify-content:center}
+ .brand{display:inline-flex;align-items:center}
+}

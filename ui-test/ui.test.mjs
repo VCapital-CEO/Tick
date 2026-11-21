@@ -148,3 +148,12 @@ test("a card can be checked by its ID, and a bad ID is refused",async()=>{
  await t.go("#/card/3f2a9c1e-7b44-4d0a-9a51-0c6e2b8d41aa");
  assert.match(t.view(),/Performance card/);assert.match(t.view(),/\$10,000\.00/);assert.match(t.view(),/\+\$1,234\.56/);assert.match(t.view(),/\+12\.35%/);
  await t.go("#/card/not-an-id");assert.match(t.view(),/Card not found/)});
+
+test("accessibility fixes: counts in button names, no invalid roles, signed-in header hook",async()=>{
+ const t=await boot(true);
+ assert.ok(t.w.document.body.classList.contains("signed-in"),"header layout hook missing");
+ await t.go("#/feed");const html=t.w.document.getElementById("view").innerHTML;
+ assert.match(html,/aria-label="Comments: \d+"/);assert.match(html,/aria-label="Like, \d+ likes"/);assert.match(html,/aria-pressed="(true|false)"/);
+ await t.go("#/creator");const c=t.w.document.getElementById("view").innerHTML;
+ assert.ok(!/role="tablist"[^>]*Creator metrics/.test(c),"creator metrics are buttons, not tabs");
+ await t.go("#/market");assert.ok(!/role="listitem"/.test(t.w.document.getElementById("view").innerHTML),"button cards must not carry listitem")});
